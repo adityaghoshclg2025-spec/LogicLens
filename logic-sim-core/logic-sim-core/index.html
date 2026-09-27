@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LogicLens — Digital Logic Simulator & Debugger</title>
+  <meta name="description" content="An event-driven digital logic simulation engine with interactive debugging, waveform analysis, and net inspection." />
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="./src/ui/style.css" />
+</head>
+<body>
+  <div id="app" class="app-container">
+    
+    <!-- Top Navigation & Simulation Control Bar -->
+    <header class="top-bar">
+      <div class="brand-section">
+        <div class="logo-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
+            <path d="M6 12h4l2-4 4 8 2-4h2"></path>
+          </svg>
+        </div>
+        <div class="brand-title">
+          <h1>LogicLens <span class="badge-v1">CORE</span></h1>
+          <p class="subtitle">Digital Logic Simulator & Debugger</p>
+        </div>
+      </div>
+
+      <!-- Simulation Controls -->
+      <div class="sim-controls">
+        <button id="btn-run" class="btn btn-primary" title="Start real-time simulation execution">
+          <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+          Run
+        </button>
+        <button id="btn-pause" class="btn btn-secondary" title="Pause simulation execution" disabled>
+          <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+          Pause
+        </button>
+        <button id="btn-step" class="btn btn-secondary" title="Advance simulation by 1 step (1 tick)">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="13 17 18 12 13 7"></polyline><polyline points="6 17 11 12 6 7"></polyline></svg>
+          Step
+        </button>
+        <button id="btn-reset" class="btn btn-secondary" title="Reset circuit state and queue">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+          Reset
+        </button>
+        <div class="divider"></div>
+        <button id="btn-demo-and" class="btn btn-ghost" title="Load AND Gate Test Circuit">
+          AND Demo
+        </button>
+        <button id="btn-demo-not" class="btn btn-ghost" title="Load NOT Gate Test Circuit">
+          NOT Demo
+        </button>
+        <button id="btn-clear" class="btn btn-ghost" title="Clear Canvas Workspace">
+          Clear
+        </button>
+      </div>
+
+      <!-- Simulation State Status Display -->
+      <div class="sim-status-card">
+        <div class="status-indicator">
+          <span id="status-dot" class="dot stopped"></span>
+          <span id="status-text" class="status-label">STOPPED</span>
+        </div>
+        <div class="time-counter">
+          <span class="label">Sim Time:</span>
+          <span id="sim-time" class="time-val">0</span>
+          <span class="unit">ticks</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Workspace Layout (Left Sidebar, Canvas, Right Sidebar) -->
+    <div class="workspace-body">
+      
+      <!-- Left Panel: Component Palette -->
+      <aside class="panel left-panel">
+        <div class="panel-header">
+          <h2>Component Palette</h2>
+          <span class="badge">11 Gates</span>
+        </div>
+        <div class="palette-search">
+          <input type="text" id="palette-search-input" placeholder="Search gates..." />
+        </div>
+
+        <div class="palette-scroll">
+          
+          <!-- Category: Inputs & Outputs -->
+          <div class="palette-category">
+            <div class="category-title">Inputs &amp; Outputs</div>
+            <div class="component-grid">
+              <div class="palette-item" data-type="INPUT" draggable="true" title="Drag onto canvas to place Input Switch">
+                <div class="item-icon input-icon">1 / 0</div>
+                <div class="item-info">
+                  <span class="item-name">Input Switch</span>
+                  <span class="item-desc">User binary source</span>
+                </div>
+              </div>
+              <div class="palette-item" data-type="OUTPUT" draggable="true" title="Drag onto canvas to place Output Probe">
+                <div class="item-icon output-icon">OUT</div>
+                <div class="item-info">
+                  <span class="item-name">Output Probe</span>
+                  <span class="item-desc">Signal viewer point</span>
+                </div>
+              </div>
+              <div class="palette-item" data-type="CLOCK" draggable="true" title="Drag onto canvas to place Clock Generator">
+                <div class="item-icon clock-icon">CLK</div>
+                <div class="item-info">
+                  <span class="item-name">Clock</span>
+                  <span class="item-desc">Autonomous generator</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Category: Basic Logic Gates -->
+          <div class="palette-category">
+            <div class="category-title">Logic Gates</div>
+            <div class="component-grid">
+              <div class="palette-item" data-type="AND" draggable="true" title="Drag onto canvas to place AND Gate">
+                <div class="item-icon gate-icon">&amp;</div>
+                <div class="item-info">
+                  <span class="item-name">AND Gate</span>
+                  <span class="item-desc">2 inputs, 1 output</span>
+                </div>
+              </div>
+              <div class="palette-item" data-type="OR" draggable="true" title="Drag onto canvas to place OR Gate">
+                <div class="item-icon gate-icon">≥1</div>
+                <div class="item-info">
+                  <span class="item-name">OR Gate</span>
+                  <span class="item-desc">2 inputs, 1 output</span>
+                </div>
+              </div>
+              <div class="palette-item" data-type="NAND" draggable="true" title="Drag onto canvas to place NAND Gate">
+                <div class="item-icon gate-icon">!&amp;</div>
+                <div class="item-info">
+                  <span class="item-name">NAND Gate</span>
+                  <span class="item-desc">Inverted AND</span>
+                </div>
+              </div>
+              <div class="palette-item" data-type="NOR" draggable="true" title="Drag onto canvas to place NOR Gate">
+                <div class="item-icon gate-icon">!≥1</div>
+                <div class="item-info">
+                  <span class="item-name">NOR Gate</span>
+                  <span class="item-desc">Inverted OR</span>
+                </div>
+              </div>
+              <div class="palette-item" data-type="XOR" draggable="true" title="Drag onto canvas to place XOR Gate">
+                <div class="item-icon gate-icon">=1</div>
+                <div class="item-info">
+                  <span class="item-name">XOR Gate</span>
+                  <span class="item-desc">Exclusive OR</span>
+                </div>
+              </div>
+              <div class="palette-item" data-type="XNOR" draggable="true" title="Drag onto canvas to place XNOR Gate">
+                <div class="item-icon gate-icon">!=1</div>
+                <div class="item-info">
+                  <span class="item-name">XNOR Gate</span>
+                  <span class="item-desc">Exclusive NOR</span>
+                </div>
+              </div>
+              <div class="palette-item" data-type="NOT" draggable="true" title="Drag onto canvas to place NOT Gate">
+                <div class="item-icon gate-icon">1</div>
+                <div class="item-info">
+                  <span class="item-name">NOT Inverter</span>
+                  <span class="item-desc">1 input, 1 output</span>
+                </div>
+              </div>
+              <div class="palette-item" data-type="BUFFER" draggable="true" title="Drag onto canvas to place Buffer">
+                <div class="item-icon gate-icon">BUF</div>
+                <div class="item-info">
+                  <span class="item-name">Buffer</span>
+                  <span class="item-desc">Signal delay element</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Category: Sequential Memory -->
+          <div class="palette-category">
+            <div class="category-title">Sequential Memory</div>
+            <div class="component-grid">
+              <div class="palette-item" data-type="DFF" draggable="true" title="Drag onto canvas to place D Flip-Flop">
+                <div class="item-icon memory-icon">DFF</div>
+                <div class="item-info">
+                  <span class="item-name">D Flip-Flop</span>
+                  <span class="item-desc">Rising-edge triggered</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </aside>
+
+      <!-- Center Panel: Interactive Circuit Canvas -->
+      <main class="canvas-container">
+        <!-- Canvas Grid Background -->
+        <div id="circuit-canvas" class="circuit-canvas">
+          <div id="canvas-viewport" class="canvas-viewport">
+            <svg id="wires-layer" class="wires-layer" width="5000" height="5000"></svg>
+            <div id="nodes-layer" class="nodes-layer"></div>
+          </div>
+        </div>
+
+        <!-- Canvas Controls Overlay -->
+        <div class="canvas-controls-overlay">
+          <button id="zoom-in" class="icon-btn" title="Zoom In (+)">+</button>
+          <button id="zoom-out" class="icon-btn" title="Zoom Out (−)">−</button>
+          <button id="reset-view" class="icon-btn" title="Reset View (100%)">100%</button>
+          <div class="divider-v"></div>
+          <button id="toggle-grid" class="icon-btn active" title="Toggle Grid Snap (20px)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+          </button>
+          <div class="divider-v"></div>
+          <button id="btn-delete" class="icon-btn danger" title="Delete Selected Component (Del/Backspace)" disabled>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+          </button>
+        </div>
+
+        <!-- Canvas Hint Overlay -->
+        <div class="canvas-hint">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          <span>Drag from an output port to an input port to create wires. Click wire/gate to select &amp; Del to remove.</span>
+        </div>
+      </main>
+
+      <!-- Right Panel: Inspector & Debugger -->
+      <aside class="panel right-panel">
+        
+        <!-- Panel Tabs -->
+        <div class="panel-tabs">
+          <button class="tab-btn active" data-tab="tab-inspector">Inspector</button>
+          <button class="tab-btn" data-tab="tab-nets">Nets &amp; Signals</button>
+          <button class="tab-btn" data-tab="tab-debug">Debugger</button>
+        </div>
+
+        <!-- Tab 1: Inspector -->
+        <div id="tab-inspector" class="tab-content active">
+          <div class="section-title">Selected Component</div>
+          <div id="inspector-content" class="inspector-card">
+            <div class="empty-state">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              <p>Select any component on the canvas to inspect its parameters and state.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: Nets & Signals -->
+        <div id="tab-nets" class="tab-content">
+          <div class="section-title">Circuit Nets (Wires)</div>
+          <div class="nets-table-container">
+            <table class="nets-table">
+              <thead>
+                <tr>
+                  <th>Net ID</th>
+                  <th>Value</th>
+                  <th>Drivers</th>
+                  <th>Readers</th>
+                </tr>
+              </thead>
+              <tbody id="nets-list-tbody">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+
+          <div class="section-title" style="margin-top: 1.5rem;">Signal History Waveform</div>
+          <div id="waveform-preview" class="waveform-container">
+            <div class="waveform-empty">Run simulation to generate waveform history</div>
+          </div>
+        </div>
+
+        <!-- Tab 3: Debugger & Diagnostics -->
+        <div id="tab-debug" class="tab-content">
+          <div class="section-title">Health Diagnostics</div>
+          
+          <div class="diag-card success">
+            <div class="diag-header">
+              <span class="status-icon">✓</span>
+              <strong>Oscillation Guard</strong>
+            </div>
+            <p class="diag-desc">Cap set to 100,000 events. Feedback loops are monitored for instability.</p>
+          </div>
+
+          <div id="floating-nets-card" class="diag-card warning">
+            <div class="diag-header">
+              <span class="status-icon">!</span>
+              <strong>Floating Nets Detected</strong>
+            </div>
+            <ul id="floating-nets-list" class="diag-list">
+              <li>None</li>
+            </ul>
+          </div>
+
+          <div id="conflicted-nets-card" class="diag-card error">
+            <div class="diag-header">
+              <span class="status-icon">✕</span>
+              <strong>Contended / Unknown ('X') Nets</strong>
+            </div>
+            <ul id="conflicted-nets-list" class="diag-list">
+              <li>None</li>
+            </ul>
+          </div>
+        </div>
+
+      </aside>
+
+    </div>
+  </div>
+
+  <script type="module" src="./src/ui/app.ts"></script>
+</body>
+</html>
