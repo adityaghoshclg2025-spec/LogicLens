@@ -73,6 +73,11 @@ export class Circuit {
     return this.components.get(id);
   }
 
+  /** Returns all component instances currently registered in the simulation engine. */
+  getAllComponents(): Map<string, ComponentInstance> {
+    return this.components;
+  }
+
   private getOrCreateNet(netName: string): Net {
     let net = this.nets.get(netName);
     if (!net) {
@@ -100,7 +105,9 @@ export class Circuit {
 
   /** Convenience: wire component A's output straight to component B's input on a shared net. */
   wire(fromId: string, fromOut: number, toId: string, toIn: number, netName?: string): string {
-    const name = netName ?? `net_${fromId}_${fromOut}_${toId}_${toIn}`;
+    const fromInst = this.components.get(fromId);
+    const existingOutputNet = fromInst?.outputNetIds[fromOut];
+    const name = netName ?? (existingOutputNet && existingOutputNet.length > 0 ? existingOutputNet : `net_${fromId}_out${fromOut}`);
     this.connectOutput(fromId, fromOut, name);
     this.connectInput(toId, toIn, name);
     return name;
@@ -108,10 +115,6 @@ export class Circuit {
 
   /** Unwire connection between component A's output pin and component B's input pin on netName. */
   unwire(fromId: string, fromOut: number, toId: string, toIn: number, netName: string): void {
-    const fromInst = this.components.get(fromId);
-    if (fromInst && fromInst.outputNetIds[fromOut] === netName) {
-      fromInst.outputNetIds[fromOut] = '';
-    }
     const toInst = this.components.get(toId);
     if (toInst && toInst.inputNetIds[toIn] === netName) {
       toInst.inputNetIds[toIn] = '';
@@ -119,10 +122,16 @@ export class Circuit {
 
     const net = this.nets.get(netName);
     if (net) {
-      net.removeDriver(`${fromId}.out${fromOut}`);
       net.removeReader(toId);
-      if (net.hasNoDrivers && net.readerComponentIds.size === 0) {
-        this.nets.delete(netName);
+      if (net.readerComponentIds.size === 0) {
+        const fromInst = this.components.get(fromId);
+        if (fromInst && fromInst.outputNetIds[fromOut] === netName) {
+          fromInst.outputNetIds[fromOut] = '';
+        }
+        net.removeDriver(`${fromId}.out${fromOut}`);
+        if (net.hasNoDrivers) {
+          this.nets.delete(netName);
+        }
       }
     }
 
@@ -216,5 +225,45 @@ export class Circuit {
       }
     }
     this.time = untilTime;
+  }
+
+  /**
+   * Advance simulation until all pending combinational events settle.
+   * For circuits with autonomous components (such as CLOCK), processes all events
+   * in the current causal cascade.
+   */
+  settle(maxEvents = 100_000): number {
+    let processed = 0;
+    const hasAutonomous = Array.from(this.components.values()).some((c) => c.def.autonomous);
+
+    if (!hasAutonomous) {
+      while (!this.queue.isEmpty) {
+        const evt = this.queue.pop()!;
+        this.time = evt.time;
+        evt.callback();
+        processed++;
+        if (processed > maxEvents) {
+          throw new OscillationError(
+            `Circuit did not settle after ${maxEvents} events (by t=${this.time}) — ` +
+              `likely an unstable feedback loop, such as a ring with an odd number of inverters.`
+          );
+        }
+      }
+    } else {
+      const settleWindow = this.time + 50;
+      while (!this.queue.isEmpty && (this.queue.peekTime() ?? Infinity) <= settleWindow) {
+        const evt = this.queue.pop()!;
+        this.time = evt.time;
+        evt.callback();
+        processed++;
+        if (processed > maxEvents) {
+          throw new OscillationError(
+            `Circuit did not settle after ${maxEvents} events (by t=${this.time}) — ` +
+              `likely an unstable feedback loop.`
+          );
+        }
+      }
+    }
+    return processed;
   }
 }

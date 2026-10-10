@@ -14,7 +14,9 @@ import {
   makeClock,
   BUILTIN_GATES,
   ComponentDefinition,
-  LogicValue
+  LogicValue,
+  generateTruthTable,
+  TruthTableResult
 } from '../index.js';
 
 export interface ComponentSpec {
@@ -26,18 +28,18 @@ export interface ComponentSpec {
 }
 
 export const COMPONENT_SPECS: Record<string, ComponentSpec> = {
-  INPUT: { width: 100, height: 50, headerHeight: 24, pinSpacing: 0, label: 'Input Switch' },
-  OUTPUT: { width: 100, height: 50, headerHeight: 24, pinSpacing: 0, label: 'Output Probe' },
-  CLOCK: { width: 110, height: 50, headerHeight: 24, pinSpacing: 0, label: 'Clock' },
-  NOT: { width: 120, height: 60, headerHeight: 26, pinSpacing: 20, label: 'NOT Inverter' },
-  BUFFER: { width: 120, height: 60, headerHeight: 26, pinSpacing: 20, label: 'Buffer' },
-  AND: { width: 130, height: 72, headerHeight: 26, pinSpacing: 20, label: 'AND Gate' },
-  OR: { width: 130, height: 72, headerHeight: 26, pinSpacing: 20, label: 'OR Gate' },
-  NAND: { width: 130, height: 72, headerHeight: 26, pinSpacing: 20, label: 'NAND Gate' },
-  NOR: { width: 130, height: 72, headerHeight: 26, pinSpacing: 20, label: 'NOR Gate' },
-  XOR: { width: 130, height: 72, headerHeight: 26, pinSpacing: 20, label: 'XOR Gate' },
-  XNOR: { width: 130, height: 72, headerHeight: 26, pinSpacing: 20, label: 'XNOR Gate' },
-  DFF: { width: 130, height: 80, headerHeight: 26, pinSpacing: 20, label: 'D Flip-Flop' },
+  INPUT: { width: 110, height: 56, headerHeight: 22, pinSpacing: 0, label: 'Input Switch' },
+  OUTPUT: { width: 110, height: 56, headerHeight: 22, pinSpacing: 0, label: 'Output Probe' },
+  CLOCK: { width: 110, height: 56, headerHeight: 22, pinSpacing: 0, label: 'Clock' },
+  NOT: { width: 120, height: 60, headerHeight: 22, pinSpacing: 20, label: 'NOT Inverter' },
+  BUFFER: { width: 120, height: 60, headerHeight: 22, pinSpacing: 20, label: 'Buffer' },
+  AND: { width: 130, height: 76, headerHeight: 22, pinSpacing: 24, label: 'AND Gate' },
+  OR: { width: 130, height: 76, headerHeight: 22, pinSpacing: 24, label: 'OR Gate' },
+  NAND: { width: 130, height: 76, headerHeight: 22, pinSpacing: 24, label: 'NAND Gate' },
+  NOR: { width: 130, height: 76, headerHeight: 22, pinSpacing: 24, label: 'NOR Gate' },
+  XOR: { width: 130, height: 76, headerHeight: 22, pinSpacing: 24, label: 'XOR Gate' },
+  XNOR: { width: 130, height: 76, headerHeight: 22, pinSpacing: 24, label: 'XNOR Gate' },
+  DFF: { width: 130, height: 84, headerHeight: 22, pinSpacing: 26, label: 'D Flip-Flop' },
 };
 
 export interface VisualComponent {
@@ -88,8 +90,8 @@ export interface DraftWire {
  * Handles visual editing, consistent component sizing, port snapping,
  * orthogonal wire routing, wire deletion, and logic-sim-core engine binding.
  */
-class LogicLensUI {
-  private circuit: Circuit;
+export class LogicLensUI {
+  public circuit: Circuit;
   private isRunning: boolean = false;
   private simInterval: number | null = null;
 
@@ -119,9 +121,8 @@ class LogicLensUI {
 
   constructor() {
     this.circuit = new Circuit();
-    this.initDemoANDCircuit();
     this.setupEventListeners();
-    this.updateUI();
+    this.initDemoANDCircuit();
   }
 
   /**
@@ -130,17 +131,17 @@ class LogicLensUI {
    *                AND ──> OUTPUT (OUT)
    * INPUT B (1) ──/
    */
-  private initDemoANDCircuit(): void {
+  public initDemoANDCircuit(): void {
     this.circuit = new Circuit();
     this.visualComponents.clear();
     this.visualWires.clear();
     this.selectedCompId = null;
     this.selectedWireId = null;
 
-    const compA = this.createVisualComponent('INPUT', 80, 100, 'Input A', '1');
+    const compA = this.createVisualComponent('INPUT', 80, 80, 'Input A', '1');
     const compB = this.createVisualComponent('INPUT', 80, 220, 'Input B', '1');
-    const compAnd = this.createVisualComponent('AND', 300, 160, 'AND Gate');
-    const compOut = this.createVisualComponent('OUTPUT', 520, 160, 'Output Probe');
+    const compAnd = this.createVisualComponent('AND', 300, 140, 'AND Gate');
+    const compOut = this.createVisualComponent('OUTPUT', 520, 150, 'Output Probe');
 
     // Create simulation wire connections
     this.createWireConnection(compA.id, 0, compAnd.id, 0);
@@ -148,35 +149,41 @@ class LogicLensUI {
     this.createWireConnection(compAnd.id, 0, compOut.id, 0);
 
     this.selectedCompId = compAnd.id;
-    this.stepSimulation();
+    this.settleSimulation();
   }
 
   /**
    * Initializes standard NOT gate verification test circuit:
    * INPUT A (0) ──> NOT ──> OUTPUT (OUT)
    */
-  private initDemoNOTCircuit(): void {
+  public initDemoNOTCircuit(): void {
     this.circuit = new Circuit();
     this.visualComponents.clear();
     this.visualWires.clear();
     this.selectedCompId = null;
     this.selectedWireId = null;
 
-    const compA = this.createVisualComponent('INPUT', 100, 150, 'Input A', '0');
-    const compNot = this.createVisualComponent('NOT', 300, 145, 'NOT Inverter');
-    const compOut = this.createVisualComponent('OUTPUT', 520, 150, 'Output Probe');
+    const compA = this.createVisualComponent('INPUT', 100, 140, 'Input A', '0');
+    const compNot = this.createVisualComponent('NOT', 300, 138, 'NOT Inverter');
+    const compOut = this.createVisualComponent('OUTPUT', 520, 140, 'Output Probe');
 
     this.createWireConnection(compA.id, 0, compNot.id, 0);
     this.createWireConnection(compNot.id, 0, compOut.id, 0);
 
     this.selectedCompId = compNot.id;
-    this.stepSimulation();
+    this.settleSimulation();
   }
 
   /**
    * Helper to instantiate a visual component and register it in logic-sim-core.
    */
-  private createVisualComponent(type: string, x: number, y: number, label?: string, initialVal: LogicValue = '0'): VisualComponent {
+  public createVisualComponent(
+    type: string,
+    x: number,
+    y: number,
+    label?: string,
+    initialVal: LogicValue = '0'
+  ): VisualComponent {
     let def: ComponentDefinition<any> | undefined;
     if (type === 'CLOCK') {
       def = makeClock(5);
@@ -190,7 +197,7 @@ class LogicLensUI {
 
     const spec = COMPONENT_SPECS[type] || COMPONENT_SPECS.BUFFER;
     const simId = this.circuit.addComponent(def, label || spec.label);
-    const visId = `comp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const visId = `comp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
     const visComp: VisualComponent = {
       id: visId,
@@ -217,7 +224,12 @@ class LogicLensUI {
   /**
    * Connects two visual components via output -> input pins in both UI and simulation engine.
    */
-  private createWireConnection(fromCompId: string, fromPinIndex: number, toCompId: string, toPinIndex: number): VisualWire | null {
+  public createWireConnection(
+    fromCompId: string,
+    fromPinIndex: number,
+    toCompId: string,
+    toPinIndex: number
+  ): VisualWire | null {
     const fromComp = this.visualComponents.get(fromCompId);
     const toComp = this.visualComponents.get(toCompId);
     if (!fromComp || !toComp) return null;
@@ -227,12 +239,12 @@ class LogicLensUI {
       (w) => w.toCompId === toCompId && w.toPinIndex === toPinIndex
     );
     if (existingWireOnTarget) {
-      this.deleteWire(existingWireOnTarget.id);
+      this.deleteWire(existingWireOnTarget.id, false);
     }
 
     // Call logic-sim-core wire API to get or create the simulation net
     const netName = this.circuit.wire(fromComp.simId, fromPinIndex, toComp.simId, toPinIndex);
-    const wireId = `wire_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const wireId = `wire_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
     const visWire: VisualWire = {
       id: wireId,
@@ -249,24 +261,40 @@ class LogicLensUI {
 
   /**
    * Calculates exact world center coordinates for a component port.
+   * Guaranteed to match the visual center of .port-dot DOM elements.
    */
-  private getPortCoordinates(comp: VisualComponent, pinType: 'input' | 'output', pinIndex: number): { x: number; y: number } {
-    const spec = COMPONENT_SPECS[comp.type] || COMPONENT_SPECS.BUFFER;
-    
+  public getPortCoordinates(
+    comp: VisualComponent,
+    pinType: 'input' | 'output',
+    pinIndex: number
+  ): { x: number; y: number } {
     if (pinType === 'input') {
       const x = comp.x;
-      let y = comp.y + comp.height / 2;
-      if (comp.inputCount > 1) {
-        const startY = spec.headerHeight + 12;
-        y = comp.y + startY + pinIndex * spec.pinSpacing;
+      let y = comp.y + 36;
+      if (comp.inputCount === 1) {
+        y = comp.y + (comp.type === 'NOT' || comp.type === 'BUFFER' ? 38 : 36);
+      } else if (comp.inputCount === 2) {
+        y = pinIndex === 0 ? comp.y + 34 : comp.y + 58;
+        if (comp.type === 'DFF') {
+          y = pinIndex === 0 ? comp.y + 34 : comp.y + 60;
+        }
+      } else if (comp.inputCount > 2) {
+        y = comp.y + 30 + pinIndex * 20;
       }
       return { x, y };
     } else {
       const x = comp.x + comp.width;
-      let y = comp.y + comp.height / 2;
-      if (comp.outputCount > 1) {
-        const startY = spec.headerHeight + 12;
-        y = comp.y + startY + pinIndex * spec.pinSpacing;
+      let y = comp.y + 36;
+      if (comp.outputCount === 1) {
+        if (comp.inputCount === 2) {
+          y = comp.y + 46;
+        } else if (comp.type === 'NOT' || comp.type === 'BUFFER') {
+          y = comp.y + 38;
+        } else if (comp.type === 'DFF') {
+          y = comp.y + 47;
+        }
+      } else if (comp.outputCount > 1) {
+        y = comp.y + 30 + pinIndex * 20;
       }
       return { x, y };
     }
@@ -302,6 +330,18 @@ class LogicLensUI {
       this.updateUI();
     });
 
+    // Truth Table Action Buttons & Modal Listeners
+    document.getElementById('btn-truth-table')?.addEventListener('click', () => this.openTruthTableModal());
+    document.getElementById('btn-generate-tt')?.addEventListener('click', () => this.generateTruthTableInTab());
+    document.getElementById('btn-modal-recompute')?.addEventListener('click', () => this.updateTruthTableInModal());
+    document.getElementById('btn-close-tt-modal')?.addEventListener('click', () => this.closeTruthTableModal());
+    document.getElementById('btn-modal-close')?.addEventListener('click', () => this.closeTruthTableModal());
+    document.getElementById('truth-table-modal')?.addEventListener('click', (e) => {
+      if (e.target === document.getElementById('truth-table-modal')) {
+        this.closeTruthTableModal();
+      }
+    });
+
     // Sidebar Tabs
     const tabBtns = document.querySelectorAll('.tab-btn');
     tabBtns.forEach((btn) => {
@@ -315,6 +355,10 @@ class LogicLensUI {
 
         target.classList.add('active');
         document.getElementById(tabId)?.classList.add('active');
+
+        if (tabId === 'tab-truthtable') {
+          this.generateTruthTableInTab();
+        }
       });
     });
 
@@ -328,7 +372,7 @@ class LogicLensUI {
       });
     });
 
-    // Palette Drag-and-Drop
+    // Palette Drag-and-Drop to Canvas
     const paletteItems = document.querySelectorAll('.palette-item');
     paletteItems.forEach((item) => {
       item.addEventListener('dragstart', (e: Event) => {
@@ -355,12 +399,14 @@ class LogicLensUI {
         const type = e.dataTransfer?.getData('text/plain');
         if (!type) return;
 
+        const spec = COMPONENT_SPECS[type] || COMPONENT_SPECS.BUFFER;
         const rect = canvasContainer.getBoundingClientRect();
         const mouseX = e.clientX - rect.left;
         const mouseY = e.clientY - rect.top;
 
-        let worldX = (mouseX - this.panX) / this.zoom;
-        let worldY = (mouseY - this.panY) / this.zoom;
+        // Center the placed component under the mouse drop coordinate
+        let worldX = (mouseX - this.panX) / this.zoom - spec.width / 2;
+        let worldY = (mouseY - this.panY) / this.zoom - spec.height / 2;
 
         if (this.snapToGrid) {
           worldX = Math.round(worldX / this.gridSize) * this.gridSize;
@@ -370,30 +416,38 @@ class LogicLensUI {
         const newComp = this.createVisualComponent(type, worldX, worldY);
         this.selectedCompId = newComp.id;
         this.selectedWireId = null;
-        this.stepSimulation();
+        this.settleSimulation();
       });
 
       // Mouse Wheel Zooming
-      canvasContainer.addEventListener('wheel', (e: WheelEvent) => {
-        e.preventDefault();
-        const rect = canvasContainer.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
+      canvasContainer.addEventListener(
+        'wheel',
+        (e: WheelEvent) => {
+          e.preventDefault();
+          const rect = canvasContainer.getBoundingClientRect();
+          const mouseX = e.clientX - rect.left;
+          const mouseY = e.clientY - rect.top;
 
-        const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
-        const newZoom = Math.min(Math.max(0.4, this.zoom * zoomFactor), 2.5);
+          const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
+          const newZoom = Math.min(Math.max(0.4, this.zoom * zoomFactor), 2.5);
 
-        this.panX = mouseX - (mouseX - this.panX) * (newZoom / this.zoom);
-        this.panY = mouseY - (mouseY - this.panY) * (newZoom / this.zoom);
-        this.zoom = newZoom;
+          this.panX = mouseX - (mouseX - this.panX) * (newZoom / this.zoom);
+          this.panY = mouseY - (mouseY - this.panY) * (newZoom / this.zoom);
+          this.zoom = newZoom;
 
-        this.renderCanvas();
-      }, { passive: false });
+          this.renderCanvas();
+        },
+        { passive: false }
+      );
 
-      // Canvas Mouse Down (Panning & Selection Reset)
+      // Canvas Mouse Down (Panning & Selection Clear)
       canvasContainer.addEventListener('mousedown', (e: MouseEvent) => {
         const target = e.target as HTMLElement;
-        const isBackground = target === canvasContainer || target.id === 'canvas-viewport' || target.id === 'wires-layer' || target.id === 'nodes-layer';
+        const isBackground =
+          target === canvasContainer ||
+          target.id === 'canvas-viewport' ||
+          target.id === 'wires-layer' ||
+          target.id === 'nodes-layer';
 
         if (e.button === 1 || (e.button === 0 && isBackground)) {
           this.isPanning = true;
@@ -410,7 +464,7 @@ class LogicLensUI {
       });
     }
 
-    // Global Mouse Move for Component Moving, Canvas Panning, and Draft Wire Dragging
+    // Global Mouse Move for Component Dragging, Viewport Panning, and Draft Wire Routing
     window.addEventListener('mousemove', (e: MouseEvent) => {
       if (this.isPanning) {
         this.panX = e.clientX - this.panStartX;
@@ -427,48 +481,52 @@ class LogicLensUI {
         const currWorldX = (mouseX - this.panX) / this.zoom;
         const currWorldY = (mouseY - this.panY) / this.zoom;
 
-        // Draft Wire Mouse Move
+        // 1. Handling Active Draft Wire Dragging
         if (this.draftWire) {
           let candidateTarget: PortTarget | null = null;
           let isValid = false;
 
-          // Scan all components for closest port dot within 20px snap radius
+          // Scan all components for closest port dot within 24px snap radius
           this.visualComponents.forEach((comp) => {
             // Check input ports
             for (let i = 0; i < comp.inputCount; i++) {
               const coords = this.getPortCoordinates(comp, 'input', i);
               const dist = Math.hypot(currWorldX - coords.x, currWorldY - coords.y);
-              if (dist < 20) {
-                candidateTarget = { compId: comp.id, pinType: 'input', pinIndex: i, worldX: coords.x, worldY: coords.y };
+              if (dist < 24) {
+                candidateTarget = {
+                  compId: comp.id,
+                  pinType: 'input',
+                  pinIndex: i,
+                  worldX: coords.x,
+                  worldY: coords.y
+                };
               }
             }
             // Check output ports
             for (let j = 0; j < comp.outputCount; j++) {
               const coords = this.getPortCoordinates(comp, 'output', j);
               const dist = Math.hypot(currWorldX - coords.x, currWorldY - coords.y);
-              if (dist < 20) {
-                candidateTarget = { compId: comp.id, pinType: 'output', pinIndex: j, worldX: coords.x, worldY: coords.y };
+              if (dist < 24) {
+                candidateTarget = {
+                  compId: comp.id,
+                  pinType: 'output',
+                  pinIndex: j,
+                  worldX: coords.x,
+                  worldY: coords.y
+                };
               }
             }
           });
 
           if (candidateTarget) {
-            // Valid if opposite port type and different component
             const isDifferentComp = (candidateTarget as PortTarget).compId !== this.draftWire.fromCompId;
             const isOppositeType = (candidateTarget as PortTarget).pinType !== this.draftWire.fromPinType;
             isValid = isDifferentComp && isOppositeType;
 
-            if (isValid) {
-              this.draftWire.currentWorldX = (candidateTarget as PortTarget).worldX;
-              this.draftWire.currentWorldY = (candidateTarget as PortTarget).worldY;
-              this.draftWire.targetPort = candidateTarget;
-              this.draftWire.isValidTarget = true;
-            } else {
-              this.draftWire.currentWorldX = currWorldX;
-              this.draftWire.currentWorldY = currWorldY;
-              this.draftWire.targetPort = candidateTarget;
-              this.draftWire.isValidTarget = false;
-            }
+            this.draftWire.currentWorldX = (candidateTarget as PortTarget).worldX;
+            this.draftWire.currentWorldY = (candidateTarget as PortTarget).worldY;
+            this.draftWire.targetPort = candidateTarget;
+            this.draftWire.isValidTarget = isValid;
           } else {
             this.draftWire.currentWorldX = currWorldX;
             this.draftWire.currentWorldY = currWorldY;
@@ -476,11 +534,12 @@ class LogicLensUI {
             this.draftWire.isValidTarget = false;
           }
 
-          this.renderCanvas();
+          this.renderWires();
+          this.highlightPortDots();
           return;
         }
 
-        // Component Drag Movement
+        // 2. Handling Active Component Dragging
         if (this.draggingCompId) {
           let targetWorldX = currWorldX - this.dragWorldOffsetX;
           let targetWorldY = currWorldY - this.dragWorldOffsetY;
@@ -494,13 +553,22 @@ class LogicLensUI {
           if (comp) {
             comp.x = targetWorldX;
             comp.y = targetWorldY;
-            this.renderCanvas();
+
+            // Update DOM position directly without tearing down the entire DOM tree
+            const nodeEl = document.querySelector(`[data-comp-node-id="${comp.id}"]`) as HTMLElement;
+            if (nodeEl) {
+              nodeEl.style.left = `${comp.x}px`;
+              nodeEl.style.top = `${comp.y}px`;
+            }
+
+            // Immediately re-render SVG wires attached to moving ports
+            this.renderWires();
           }
         }
       }
     });
 
-    // Global Mouse Up for Wiring Release & Component Drop
+    // Global Mouse Up for Wiring Completion & Component Drop
     window.addEventListener('mouseup', () => {
       if (this.isPanning) {
         this.isPanning = false;
@@ -534,14 +602,17 @@ class LogicLensUI {
             this.selectedWireId = createdWire.id;
             this.selectedCompId = null;
           }
-          this.stepSimulation();
+          this.settleSimulation();
         }
 
         this.draftWire = null;
         this.renderCanvas();
       }
 
-      this.draggingCompId = null;
+      if (this.draggingCompId) {
+        this.draggingCompId = null;
+        this.updateInspector();
+      }
     });
 
     // Canvas Viewport Controls Overlay
@@ -580,7 +651,8 @@ class LogicLensUI {
     // Keyboard Controls: Delete / Backspace / Escape
     window.addEventListener('keydown', (e: KeyboardEvent) => {
       const activeElement = document.activeElement;
-      const isInputActive = activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA');
+      const isInputActive =
+        activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA');
       if (isInputActive) return;
 
       if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -595,6 +667,7 @@ class LogicLensUI {
         if (this.draftWire) {
           this.draftWire = null;
         }
+        this.closeTruthTableModal();
         this.selectedCompId = null;
         this.selectedWireId = null;
         this.updateUI();
@@ -603,17 +676,40 @@ class LogicLensUI {
   }
 
   /**
+   * Highlights port dots during active draft wire connection.
+   */
+  private highlightPortDots(): void {
+    const allPortDots = document.querySelectorAll('.port-dot');
+    allPortDots.forEach((dot) => {
+      dot.classList.remove('target-valid', 'target-invalid');
+      if (this.draftWire && this.draftWire.targetPort) {
+        const compId = dot.getAttribute('data-comp-id');
+        const pinType = dot.getAttribute('data-pin-type');
+        const pinIndex = parseInt(dot.getAttribute('data-pin-index') || '0', 10);
+
+        if (
+          compId === this.draftWire.targetPort.compId &&
+          pinType === this.draftWire.targetPort.pinType &&
+          pinIndex === this.draftWire.targetPort.pinIndex
+        ) {
+          dot.classList.add(this.draftWire.isValidTarget ? 'target-valid' : 'target-invalid');
+        }
+      }
+    });
+  }
+
+  /**
    * Deletes a visual component and unhooks all connected simulation nets.
    */
-  private deleteComponent(compId: string): void {
+  public deleteComponent(compId: string): void {
     const comp = this.visualComponents.get(compId);
     if (!comp) return;
 
-    // 1. Remove connected wires
+    // 1. Remove all connected wires
     const connectedWires = Array.from(this.visualWires.values()).filter(
       (w) => w.fromCompId === compId || w.toCompId === compId
     );
-    connectedWires.forEach((w) => this.deleteWire(w.id));
+    connectedWires.forEach((w) => this.deleteWire(w.id, false));
 
     // 2. Remove simulation component from engine
     this.circuit.removeComponent(comp.simId);
@@ -625,13 +721,13 @@ class LogicLensUI {
       this.selectedCompId = null;
     }
 
-    this.stepSimulation();
+    this.settleSimulation();
   }
 
   /**
    * Deletes a visual wire and unwires connection in logic-sim-core.
    */
-  private deleteWire(wireId: string): void {
+  public deleteWire(wireId: string, autoStep: boolean = true): void {
     const wire = this.visualWires.get(wireId);
     if (!wire) return;
 
@@ -648,16 +744,18 @@ class LogicLensUI {
       this.selectedWireId = null;
     }
 
-    this.stepSimulation();
+    if (autoStep) {
+      this.settleSimulation();
+    }
   }
 
-  private startSimulation(): void {
+  public startSimulation(): void {
     if (this.isRunning) return;
     this.isRunning = true;
-    
+
     document.getElementById('btn-run')?.setAttribute('disabled', 'true');
     document.getElementById('btn-pause')?.removeAttribute('disabled');
-    
+
     const dot = document.getElementById('status-dot');
     const text = document.getElementById('status-text');
     if (dot) dot.className = 'dot running';
@@ -665,13 +763,13 @@ class LogicLensUI {
 
     this.simInterval = window.setInterval(() => {
       this.stepSimulation();
-    }, 300);
+    }, 250);
   }
 
-  private pauseSimulation(): void {
+  public pauseSimulation(): void {
     this.isRunning = false;
     if (this.simInterval) clearInterval(this.simInterval);
-    
+
     document.getElementById('btn-run')?.removeAttribute('disabled');
     document.getElementById('btn-pause')?.setAttribute('disabled', 'true');
 
@@ -681,7 +779,7 @@ class LogicLensUI {
     if (text) text.textContent = 'PAUSED';
   }
 
-  private stepSimulation(): void {
+  public stepSimulation(): void {
     try {
       const targetTime = this.circuit.time + 1;
       this.circuit.run(targetTime);
@@ -696,62 +794,84 @@ class LogicLensUI {
     }
   }
 
-  private resetSimulation(): void {
+  /**
+   * Settles all cascading combinational logic events across series gates.
+   */
+  public settleSimulation(): void {
+    try {
+      this.circuit.settle();
+      this.updateUI();
+    } catch (err: any) {
+      this.pauseSimulation();
+      const dot = document.getElementById('status-dot');
+      const text = document.getElementById('status-text');
+      if (dot) dot.className = 'dot oscillation';
+      if (text) text.textContent = 'OSCILLATION ERROR';
+      alert(`Simulation Error: ${err.message}`);
+    }
+  }
+
+  public resetSimulation(): void {
     this.pauseSimulation();
     this.initDemoANDCircuit();
-    this.updateUI();
   }
 
   /**
-   * Toggles binary input switch state ('0' <-> '1')
+   * Toggles binary input switch state ('0' <-> '1') and settles all connected downstream gates.
    */
-  private toggleInput(visCompId: string): void {
+  public toggleInput(visCompId: string): void {
     const comp = this.visualComponents.get(visCompId);
     if (!comp || comp.type !== 'INPUT') return;
 
     const newVal: LogicValue = comp.val === '1' ? '0' : '1';
     comp.val = newVal;
 
-    // Send updated value to logic-sim-core backend!
+    // Send updated value to logic-sim-core backend
     this.circuit.setInput(comp.simId, newVal);
-    
-    this.stepSimulation();
+
+    // Completely settle all cascading combinational gates in sequence
+    this.settleSimulation();
   }
 
   /**
    * Computes orthogonal EDA path string between two port points.
+   * Handles forward routing and reverse loop-around routing cleanly.
    */
-  private calculateOrthogonalPath(x1: number, y1: number, x2: number, y2: number): string {
+  public calculateOrthogonalPath(x1: number, y1: number, x2: number, y2: number): string {
     const dx = x2 - x1;
     const dy = y2 - y1;
     const stub = 20;
 
+    // Target is to the right with comfortable routing room
     if (x2 >= x1 + stub * 2) {
-      const midX = x1 + dx / 2;
+      const midX = Math.round(x1 + dx / 2);
       return `M ${x1} ${y1} H ${midX} V ${y2} H ${x2}`;
-    } else {
-      const midX1 = x1 + stub;
-      const midX2 = x2 - stub;
-      const midY = y1 + (dy >= 0 ? 30 : -30);
-      return `M ${x1} ${y1} H ${midX1} V ${midY} H ${midX2} V ${y2} H ${x2}`;
     }
+
+    // Target is behind or vertically adjacent -> route around cleanly
+    const midY = dy >= 0 ? Math.max(y1, y2) + 26 : Math.min(y1, y2) - 26;
+    const stub1 = x1 + stub;
+    const stub2 = x2 - stub;
+    return `M ${x1} ${y1} H ${stub1} V ${midY} H ${stub2} V ${y2} H ${x2}`;
   }
 
   /**
-   * Renders components, connection ports, SVG wires, draft wire, and selection outlines.
+   * Renders only the SVG wires layer and draft wire.
    */
-  private renderCanvas(): void {
-    const viewportEl = document.getElementById('canvas-viewport');
-    const nodesLayer = document.getElementById('nodes-layer');
+  private renderWires(): void {
     const wiresLayer = document.getElementById('wires-layer');
-    if (!viewportEl || !nodesLayer || !wiresLayer) return;
+    if (!wiresLayer) return;
 
-    viewportEl.style.transform = `translate(${this.panX}px, ${this.panY}px) scale(${this.zoom})`;
-
-    nodesLayer.innerHTML = '';
     wiresLayer.innerHTML = '';
 
-    // 1. Render Permanent SVG Wires
+    // Count fan-outs per source port to render junction indicators
+    const portFanOutCount = new Map<string, number>();
+    this.visualWires.forEach((wire) => {
+      const key = `${wire.fromCompId}_${wire.fromPinIndex}`;
+      portFanOutCount.set(key, (portFanOutCount.get(key) || 0) + 1);
+    });
+
+    // 1. Render permanent SVG wires
     this.visualWires.forEach((wire) => {
       const fromComp = this.visualComponents.get(wire.fromCompId);
       const toComp = this.visualComponents.get(wire.toCompId);
@@ -773,11 +893,11 @@ class LogicLensUI {
 
       const isSelected = this.selectedWireId === wire.id;
       pathEl.className.baseVal = `wire-path ${isSelected ? 'selected' : ''}`;
-      pathEl.setAttribute('stroke', color);
-      pathEl.setAttribute('stroke-width', isSelected ? '4' : netVal === '1' ? '3' : '2');
+      pathEl.setAttribute('stroke', isSelected ? '#38bdf8' : color);
+      pathEl.setAttribute('stroke-width', isSelected ? '4' : netVal === '1' ? '3' : '2.5');
 
       if (netVal === '1' && !isSelected) {
-        pathEl.setAttribute('filter', 'drop-shadow(0 0 4px #38bdf8)');
+        pathEl.setAttribute('filter', 'drop-shadow(0 0 5px #38bdf8)');
       }
 
       // Wire selection listener
@@ -789,20 +909,33 @@ class LogicLensUI {
       });
 
       wiresLayer.appendChild(pathEl);
+
+      // Render junction indicator if fan-out > 1
+      const fanOut = portFanOutCount.get(`${wire.fromCompId}_${wire.fromPinIndex}`) || 0;
+      if (fanOut > 1) {
+        const junctionEl = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        junctionEl.setAttribute('cx', p1.x.toString());
+        junctionEl.setAttribute('cy', p1.y.toString());
+        junctionEl.setAttribute('r', '4');
+        junctionEl.setAttribute('fill', color);
+        junctionEl.setAttribute('stroke', '#0b0e14');
+        junctionEl.setAttribute('stroke-width', '1.5');
+        wiresLayer.appendChild(junctionEl);
+      }
     });
 
     // 2. Render Draft Wire while dragging connection
     if (this.draftWire) {
       const draftPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      const { startWorldX, startWorldY, currentWorldX, currentWorldY, fromPinType, targetPort, isValidTarget } = this.draftWire;
-      
+      const { startWorldX, startWorldY, currentWorldX, currentWorldY, fromPinType, targetPort, isValidTarget } =
+        this.draftWire;
+
       let p1X = startWorldX;
       let p1Y = startWorldY;
       let p2X = currentWorldX;
       let p2Y = currentWorldY;
 
       if (fromPinType === 'input') {
-        // Dragging out from an input port -> reverse path orientation
         p1X = currentWorldX;
         p1Y = currentWorldY;
         p2X = startWorldX;
@@ -812,16 +945,31 @@ class LogicLensUI {
       draftPath.setAttribute('d', this.calculateOrthogonalPath(p1X, p1Y, p2X, p2Y));
       draftPath.setAttribute('fill', 'none');
       const isInvalid = targetPort !== null && !isValidTarget;
-      draftPath.className.baseVal = `draft-wire ${isInvalid ? 'invalid' : ''}`;
+      const isValid = targetPort !== null && isValidTarget;
+      draftPath.className.baseVal = `draft-wire ${isValid ? 'valid' : isInvalid ? 'invalid' : ''}`;
 
       wiresLayer.appendChild(draftPath);
     }
+  }
 
-    // 3. Render Component Nodes & Port Dots
+  /**
+   * Renders components, connection ports, SVG wires, draft wire, and selection outlines.
+   */
+  private renderCanvas(): void {
+    const viewportEl = document.getElementById('canvas-viewport');
+    const nodesLayer = document.getElementById('nodes-layer');
+    if (!viewportEl || !nodesLayer) return;
+
+    viewportEl.style.transform = `translate(${this.panX}px, ${this.panY}px) scale(${this.zoom})`;
+
+    nodesLayer.innerHTML = '';
+
+    // 1. Render Component Nodes & Port Dots
     this.visualComponents.forEach((comp) => {
       const nodeEl = document.createElement('div');
       const isSelected = this.selectedCompId === comp.id;
       nodeEl.className = `circuit-node ${comp.type.toLowerCase()}-node ${isSelected ? 'selected' : ''}`;
+      nodeEl.setAttribute('data-comp-node-id', comp.id);
       nodeEl.style.left = `${comp.x}px`;
       nodeEl.style.top = `${comp.y}px`;
       nodeEl.style.width = `${comp.width}px`;
@@ -868,9 +1016,16 @@ class LogicLensUI {
       bodyEl.className = 'node-body';
 
       if (comp.type === 'INPUT') {
+        const portCoords = this.getPortCoordinates(comp, 'output', 0);
+        const relY = portCoords.y - comp.y;
         bodyEl.innerHTML = `
-          <button class="toggle-btn val-${comp.val || '0'}">${comp.val || '0'}</button>
-          <div class="port-dot ${this.isPortConnected(comp.id, 'output', 0) ? 'connected' : ''}" data-comp-id="${comp.id}" data-pin-type="output" data-pin-index="0" title="Output Port (Drag to wire)"></div>
+          <div class="input-ctrl">
+            <button class="toggle-btn val-${comp.val || '0'}" title="Toggle Switch (0 / 1)">${comp.val || '0'}</button>
+          </div>
+          <div class="port-dot ${this.isPortConnected(comp.id, 'output', 0) ? 'connected' : ''}"
+               style="position:absolute; left:100%; top:${relY}px; transform:translate(-50%, -50%);"
+               data-comp-id="${comp.id}" data-pin-type="output" data-pin-index="0"
+               title="Output Port (Drag to wire)"></div>
         `;
         const btn = bodyEl.querySelector('.toggle-btn');
         btn?.addEventListener('click', (e) => {
@@ -883,32 +1038,82 @@ class LogicLensUI {
         if (connectedWire) {
           probeVal = this.circuit.getNetValue(connectedWire.netName);
         }
+        const portCoords = this.getPortCoordinates(comp, 'input', 0);
+        const relY = portCoords.y - comp.y;
 
         bodyEl.innerHTML = `
-          <div class="port-dot ${this.isPortConnected(comp.id, 'input', 0) ? 'connected' : ''}" data-comp-id="${comp.id}" data-pin-type="input" data-pin-index="0" title="Input Port (Drag to wire)"></div>
-          <span class="value-pill val-${probeVal}">${probeVal}</span>
+          <div class="port-dot ${this.isPortConnected(comp.id, 'input', 0) ? 'connected' : ''}"
+               style="position:absolute; left:0px; top:${relY}px; transform:translate(-50%, -50%);"
+               data-comp-id="${comp.id}" data-pin-type="input" data-pin-index="0"
+               title="Input Port (Drag to wire)"></div>
+          <div class="output-ctrl">
+            <span class="value-pill val-${probeVal}">${probeVal}</span>
+          </div>
+        `;
+      } else if (comp.type === 'CLOCK') {
+        let clkVal: LogicValue = '0';
+        const clkNet = this.circuit.getComponent(comp.simId)?.outputNetIds[0];
+        if (clkNet) {
+          clkVal = this.circuit.getNetValue(clkNet);
+        }
+        const portCoords = this.getPortCoordinates(comp, 'output', 0);
+        const relY = portCoords.y - comp.y;
+        bodyEl.innerHTML = `
+          <div class="clock-display">
+            <span class="clock-badge">CLK</span>
+            <span class="value-pill val-${clkVal}">${clkVal}</span>
+          </div>
+          <div class="port-dot ${this.isPortConnected(comp.id, 'output', 0) ? 'connected' : ''}"
+               style="position:absolute; left:100%; top:${relY}px; transform:translate(-50%, -50%);"
+               data-comp-id="${comp.id}" data-pin-type="output" data-pin-index="0"
+               title="Clock Output Port"></div>
         `;
       } else {
-        // Multi-pin Logic Gate
-        const inputPinsHtml = Array.from({ length: comp.inputCount })
-          .map((_, i) => `
-            <div class="pin">
-              <span class="port-dot ${this.isPortConnected(comp.id, 'input', i) ? 'connected' : ''}" data-comp-id="${comp.id}" data-pin-type="input" data-pin-index="${i}" title="Input ${i} Port"></span>
-              <span>In${i}</span>
-            </div>
-          `).join('');
+        // Gates (AND, OR, NOT, NAND, NOR, XOR, XNOR, BUFFER, DFF)
+        let inputDotsHtml = '';
+        for (let i = 0; i < comp.inputCount; i++) {
+          const coords = this.getPortCoordinates(comp, 'input', i);
+          const relY = coords.y - comp.y;
+          const pinLabel = comp.type === 'DFF' ? (i === 0 ? 'D' : 'CLK') : comp.inputCount > 1 ? `In${i}` : 'In';
+          inputDotsHtml += `
+            <div class="port-dot ${this.isPortConnected(comp.id, 'input', i) ? 'connected' : ''}"
+                 style="position:absolute; left:0px; top:${relY}px; transform:translate(-50%, -50%);"
+                 data-comp-id="${comp.id}" data-pin-type="input" data-pin-index="${i}"
+                 title="Input ${i} (${pinLabel}) Port"></div>
+            <span class="pin-text-label pin-in" style="position:absolute; left:8px; top:${relY}px; transform:translateY(-50%); font-size:0.625rem; color:var(--text-dim); font-family:var(--font-mono); pointer-events:none;">${pinLabel}</span>
+          `;
+        }
 
-        const outputPinsHtml = Array.from({ length: comp.outputCount })
-          .map((_, j) => `
-            <div class="pin">
-              <span>Out${j > 0 ? j : ''}</span>
-              <span class="port-dot ${this.isPortConnected(comp.id, 'output', j) ? 'connected' : ''}" data-comp-id="${comp.id}" data-pin-type="output" data-pin-index="${j}" title="Output ${j} Port"></span>
-            </div>
-          `).join('');
+        let outputDotsHtml = '';
+        for (let j = 0; j < comp.outputCount; j++) {
+          const coords = this.getPortCoordinates(comp, 'output', j);
+          const relY = coords.y - comp.y;
+          const outLabel = comp.type === 'DFF' ? 'Q' : comp.outputCount > 1 ? `Out${j}` : 'Out';
+          outputDotsHtml += `
+            <div class="port-dot ${this.isPortConnected(comp.id, 'output', j) ? 'connected' : ''}"
+                 style="position:absolute; left:100%; top:${relY}px; transform:translate(-50%, -50%);"
+                 data-comp-id="${comp.id}" data-pin-type="output" data-pin-index="${j}"
+                 title="Output ${j} (${outLabel}) Port"></div>
+            <span class="pin-text-label pin-out" style="position:absolute; right:8px; top:${relY}px; transform:translateY(-50%); font-size:0.625rem; color:var(--text-dim); font-family:var(--font-mono); pointer-events:none;">${outLabel}</span>
+          `;
+        }
+
+        // Center gate icon symbol
+        let symbol = comp.type;
+        if (comp.type === 'AND') symbol = '&';
+        else if (comp.type === 'OR') symbol = '≥1';
+        else if (comp.type === 'NOT') symbol = '1';
+        else if (comp.type === 'BUFFER') symbol = 'BUF';
+        else if (comp.type === 'NAND') symbol = '!&';
+        else if (comp.type === 'NOR') symbol = '!≥1';
+        else if (comp.type === 'XOR') symbol = '=1';
+        else if (comp.type === 'XNOR') symbol = '!=1';
+        else if (comp.type === 'DFF') symbol = 'DFF';
 
         bodyEl.innerHTML = `
-          <div class="node-pins">${inputPinsHtml}</div>
-          <div class="node-pins">${outputPinsHtml}</div>
+          ${inputDotsHtml}
+          <div class="gate-symbol-center">${symbol}</div>
+          ${outputDotsHtml}
         `;
       }
 
@@ -917,15 +1122,6 @@ class LogicLensUI {
       portDots.forEach((dot) => {
         const pinType = dot.getAttribute('data-pin-type') as 'input' | 'output';
         const pinIndex = parseInt(dot.getAttribute('data-pin-index') || '0', 10);
-
-        // Highlight port dot if target of active draft wire
-        if (this.draftWire && this.draftWire.targetPort) {
-          if (this.draftWire.targetPort.compId === comp.id &&
-              this.draftWire.targetPort.pinType === pinType &&
-              this.draftWire.targetPort.pinIndex === pinIndex) {
-            dot.classList.add(this.draftWire.isValidTarget ? 'target-valid' : 'target-invalid');
-          }
-        }
 
         dot.addEventListener('mousedown', (e: Event) => {
           const mouseEvt = e as MouseEvent;
@@ -945,13 +1141,16 @@ class LogicLensUI {
             isValidTarget: false
           };
 
-          this.renderCanvas();
+          this.renderWires();
         });
       });
 
       nodeEl.appendChild(bodyEl);
       nodesLayer.appendChild(nodeEl);
     });
+
+    // 2. Render all Wires
+    this.renderWires();
   }
 
   private isPortConnected(compId: string, pinType: 'input' | 'output', pinIndex: number): boolean {
@@ -967,7 +1166,7 @@ class LogicLensUI {
   /**
    * Updates workspace panel UI elements.
    */
-  private updateUI(): void {
+  public updateUI(): void {
     const timeEl = document.getElementById('sim-time');
     if (timeEl) timeEl.textContent = this.circuit.time.toString();
 
@@ -1071,7 +1270,7 @@ class LogicLensUI {
             <span class="prop-value">${comp.label}</span>
           </div>
           <div class="prop-row">
-            <span class="prop-label">Canvas Dimensions:</span>
+            <span class="prop-label">Dimensions:</span>
             <span class="prop-value">${comp.width}px × ${comp.height}px</span>
           </div>
           <div class="prop-row">
@@ -1103,23 +1302,26 @@ class LogicLensUI {
 
     const wireList = Array.from(this.visualWires.values());
     if (wireList.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" style="color: var(--text-dim); text-align:center;">No wires connected</td></tr>';
+      tbody.innerHTML =
+        '<tr><td colspan="4" style="color: var(--text-dim); text-align:center;">No wires connected</td></tr>';
       return;
     }
 
-    tbody.innerHTML = wireList.map((wire) => {
-      const val = this.circuit.getNetValue(wire.netName);
-      const fromComp = this.visualComponents.get(wire.fromCompId);
-      const toComp = this.visualComponents.get(wire.toCompId);
-      return `
+    tbody.innerHTML = wireList
+      .map((wire) => {
+        const val = this.circuit.getNetValue(wire.netName);
+        const fromComp = this.visualComponents.get(wire.fromCompId);
+        const toComp = this.visualComponents.get(wire.toCompId);
+        return `
         <tr>
           <td>${wire.netName}</td>
           <td><span class="value-pill val-${val}">${val}</span></td>
-          <td>${fromComp?.type || 'Source'}</td>
-          <td>${toComp?.type || 'Reader'}</td>
+          <td>${fromComp?.label || 'Source'}</td>
+          <td>${toComp?.label || 'Reader'}</td>
         </tr>
       `;
-    }).join('');
+      })
+      .join('');
 
     const waveBox = document.getElementById('waveform-preview');
     if (waveBox && wireList.length > 0) {
@@ -1132,7 +1334,7 @@ class LogicLensUI {
             <span style="color: var(--accent-cyan);">${history.length} events</span>
           </div>
           <div style="height: 40px; background: var(--bg-main); border-radius: 4px; display: flex; align-items: center; padding: 0 10px; color: var(--accent-emerald);">
-            Trace: ${history.map(h => `t=${h.time}:${h.value}`).join(' ➔ ') || 'No transitions yet'}
+            Trace: ${history.map((h) => `t=${h.time}:${h.value}`).join(' ➔ ') || 'No transitions yet'}
           </div>
         </div>
       `;
@@ -1145,21 +1347,190 @@ class LogicLensUI {
 
     const floatList = document.getElementById('floating-nets-list');
     if (floatList) {
-      floatList.innerHTML = floatingNets.length === 0
-        ? '<li style="color: var(--text-dim);">None detected ✓</li>'
-        : floatingNets.map(n => `<li style="color: var(--accent-amber);">${n}</li>`).join('');
+      floatList.innerHTML =
+        floatingNets.length === 0
+          ? '<li style="color: var(--text-dim);">None detected ✓</li>'
+          : floatingNets.map((n) => `<li style="color: var(--accent-amber);">${n}</li>`).join('');
     }
 
     const conflictList = document.getElementById('conflicted-nets-list');
     if (conflictList) {
-      conflictList.innerHTML = conflictedNets.length === 0
-        ? '<li style="color: var(--text-dim);">None detected ✓</li>'
-        : conflictedNets.map(n => `<li style="color: var(--accent-rose);">${n}</li>`).join('');
+      conflictList.innerHTML =
+        conflictedNets.length === 0
+          ? '<li style="color: var(--text-dim);">None detected ✓</li>'
+          : conflictedNets.map((n) => `<li style="color: var(--accent-rose);">${n}</li>`).join('');
     }
+  }
+
+  /**
+   * Automatically computes the truth table from current visual inputs and outputs.
+   */
+  public computeTruthTable(): TruthTableResult {
+    const inputComponents = Array.from(this.visualComponents.values()).filter((c) => c.type === 'INPUT');
+    const outputComponents = Array.from(this.visualComponents.values()).filter((c) => c.type === 'OUTPUT');
+
+    // Sort inputs and outputs by canvas coordinates (top-to-bottom, left-to-right) for logical column ordering
+    inputComponents.sort((a, b) => (a.y !== b.y ? a.y - b.y : a.x - b.x));
+    outputComponents.sort((a, b) => (a.y !== b.y ? a.y - b.y : a.x - b.x));
+
+    const inputDescs = inputComponents.map((c) => ({
+      id: c.simId,
+      label: c.label || 'Input'
+    }));
+
+    const outputDescs = outputComponents.map((c) => ({
+      id: c.simId,
+      label: c.label || 'Output'
+    }));
+
+    // Generate table using logic-sim-core simulation engine
+    const result = generateTruthTable(this.circuit, {
+      inputs: inputDescs,
+      outputs: outputDescs
+    });
+
+    // Ensure visual component switch states stay in sync after state restoration
+    inputComponents.forEach((c) => {
+      const comp = this.circuit.getComponent(c.simId);
+      if (comp?.state?.value) {
+        c.val = comp.state.value;
+      }
+    });
+
+    return result;
+  }
+
+  /**
+   * Generates formatted HTML for a TruthTableResult.
+   */
+  public renderTruthTableHTML(result: TruthTableResult): string {
+    if (!result.success) {
+      return `
+        <div class="diag-card error" style="margin-top: 0.5rem;">
+          <div class="diag-header">
+            <span class="status-icon">✕</span>
+            <strong>Truth Table Unavailable</strong>
+          </div>
+          <p class="diag-desc">${result.error || 'Unable to compute truth table.'}</p>
+        </div>
+      `;
+    }
+
+    let warningHtml = '';
+    if (result.warnings.length > 0) {
+      warningHtml = `
+        <div class="diag-card warning" style="margin-bottom: 0.75rem;">
+          <div class="diag-header">
+            <span class="status-icon">!</span>
+            <strong>Simulation Diagnostics</strong>
+          </div>
+          <ul class="diag-list">
+            ${result.warnings.map((w) => `<li>${w}</li>`).join('')}
+          </ul>
+        </div>
+      `;
+    }
+
+    const inThs = result.inputs.map((inLabel) => `<th class="tt-th-in">${inLabel}</th>`).join('');
+    const outThs = result.outputs.map((outLabel) => `<th class="tt-th-out">${outLabel}</th>`).join('');
+
+    const rowsHtml = result.rows
+      .map((row, idx) => {
+        const inTds = result.inputs
+          .map((inLabel) => `<td><span class="value-pill val-${row.inputs[inLabel]}">${row.inputs[inLabel]}</span></td>`)
+          .join('');
+        const outTds = result.outputs
+          .map((outLabel) => {
+            const val = row.outputs[outLabel] ?? 'Z';
+            return `<td><span class="value-pill val-${val}">${val}</span></td>`;
+          })
+          .join('');
+
+        return `
+          <tr>
+            <td class="tt-td-idx" style="color: var(--text-dim); font-size: 0.7rem;">${idx}</td>
+            ${inTds}
+            <td class="tt-td-sep">➔</td>
+            ${outTds}
+          </tr>
+        `;
+      })
+      .join('');
+
+    return `
+      ${warningHtml}
+      <div class="tt-summary-bar">
+        <span class="badge" style="background: rgba(56, 189, 248, 0.15); color: var(--accent-cyan); border-color: rgba(56, 189, 248, 0.3);">
+          ${result.inputs.length} Input${result.inputs.length === 1 ? '' : 's'} (${result.inputs.join(', ')})
+        </span>
+        <span class="badge" style="background: rgba(52, 211, 153, 0.15); color: var(--accent-emerald); border-color: rgba(52, 211, 153, 0.3);">
+          ${result.outputs.length} Output${result.outputs.length === 1 ? '' : 's'} (${result.outputs.join(', ')})
+        </span>
+        <span class="badge" style="background: var(--bg-hover); color: var(--text-main);">
+          ${result.totalCombinations} State${result.totalCombinations === 1 ? '' : 's'} (2<sup>${result.inputs.length}</sup>)
+        </span>
+      </div>
+      <div class="nets-table-container tt-scroll-box" style="margin-top: 0.75rem; max-height: 380px; overflow-y: auto;">
+        <table class="nets-table tt-table">
+          <thead>
+            <tr>
+              <th style="width: 32px; color: var(--text-dim);">#</th>
+              ${inThs}
+              <th style="width: 20px; text-align: center; color: var(--text-dim);"></th>
+              ${outThs}
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  /**
+   * Generates and renders the truth table in the right-side Truth Table tab.
+   */
+  public generateTruthTableInTab(): void {
+    const container = document.getElementById('truth-table-results');
+    if (!container) return;
+
+    const result = this.computeTruthTable();
+    container.innerHTML = this.renderTruthTableHTML(result);
+    this.updateUI();
+  }
+
+  /**
+   * Opens the expanded Truth Table modal dialog and computes results.
+   */
+  public openTruthTableModal(): void {
+    const modal = document.getElementById('truth-table-modal');
+    if (!modal) return;
+
+    this.updateTruthTableInModal();
+    modal.style.display = 'flex';
+  }
+
+  public closeTruthTableModal(): void {
+    const modal = document.getElementById('truth-table-modal');
+    if (modal) {
+      modal.style.display = 'none';
+    }
+  }
+
+  public updateTruthTableInModal(): void {
+    const content = document.getElementById('modal-tt-content');
+    if (!content) return;
+
+    const result = this.computeTruthTable();
+    content.innerHTML = this.renderTruthTableHTML(result);
+    this.updateUI();
   }
 }
 
-// Initialize application on DOM ready
-window.addEventListener('DOMContentLoaded', () => {
-  new LogicLensUI();
-});
+// Initialize application on DOM ready if running in browser environment
+if (typeof window !== 'undefined') {
+  window.addEventListener('DOMContentLoaded', () => {
+    new LogicLensUI();
+  });
+}
