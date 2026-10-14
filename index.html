@@ -277,6 +277,16 @@
           </div>
 
           <div class="section-title" style="margin-top: 1.5rem;">Timing Diagram</div>
+          <div class="timing-selection-header">
+            <span class="diag-desc">Choose the signals to plot:</span>
+            <div class="timing-selection-actions">
+              <button id="btn-timing-select-all" class="btn btn-ghost">All</button>
+              <button id="btn-timing-clear-selection" class="btn btn-ghost">Clear</button>
+            </div>
+          </div>
+          <div id="timing-signal-list" class="timing-signal-list" aria-label="Signals to include in the timing diagram">
+            <div class="waveform-empty">Connect wires to choose signals.</div>
+          </div>
           <div id="waveform-preview" class="waveform-container">
             <div class="waveform-empty">Run the simulation to record signal transitions.</div>
           </div>
@@ -294,8 +304,8 @@
           <button id="btn-explain-circuit" class="btn btn-primary" style="width: 100%; justify-content: center;">
             Explain My Circuit
           </button>
-          <div id="circuit-explanation" class="truth-table-container" style="margin-top: 0.75rem;">
-            <p class="diag-desc">Choose an output probe and click Explain My Circuit to see its upstream dependencies.</p>
+          <div id="circuit-explanation" class="explanation-container">
+            <p class="explanation-empty">Choose an output probe and click Explain My Circuit to follow its signal path.</p>
           </div>
           
           <div class="diag-card success">

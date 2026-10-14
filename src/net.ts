@@ -44,6 +44,11 @@ export class Net {
     return this.drivers.size === 0;
   }
 
+  /** A snapshot of current driver values for diagnostics and explanation tools. */
+  getDriverValues(): ReadonlyArray<{ id: string; value: LogicValue }> {
+    return [...this.drivers.entries()].map(([id, value]) => ({ id, value }));
+  }
+
   /** Combine every driver's contribution into this net's resolved value. */
   resolve(): LogicValue {
     if (this.drivers.size === 0) return 'Z';

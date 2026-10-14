@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Circuit } from '../src/circuit.js';
 import { AND, DFF, INPUT, makeClock, OUTPUT } from '../src/component.js';
-import { buildTimingSignals } from '../src/timingDiagram.js';
+import { buildTimingSignals, selectTimingSignals } from '../src/timingDiagram.js';
 
 describe('Timing Diagram data', () => {
   it('adds a high-impedance baseline and preserves all four-state transitions in event order', () => {
@@ -50,6 +50,23 @@ describe('Timing Diagram data', () => {
     expect(signals[0].transitions).toContainEqual({ time: 3, value: '0' });
     expect(signals[1].transitions.some((transition) => transition.value === '1')).toBe(true);
     expect(signals[1].transitions.at(-1)?.value).toBe('0');
+    expect(selectTimingSignals(signals, new Set(['outputY']))).toEqual([signals[1]]);
+    expect(selectTimingSignals(signals, new Set(['inputA', 'outputY']))).toEqual(signals);
+  });
+
+  it('returns no selected rows after the selection is cleared and a fresh circuit has no history', () => {
+    const previous = new Circuit();
+    const source = previous.addComponent(INPUT, 'A');
+    const sink = previous.addComponent(OUTPUT, 'Y');
+    previous.wire(source, 0, sink, 0, 'signalA');
+    previous.setInput(source, '1');
+    previous.run(1);
+    expect(previous.getHistory('signalA')).toContainEqual({ time: 0, value: '1' });
+
+    const freshCircuit = new Circuit();
+    const freshSignal = buildTimingSignals([{ netName: 'newSignal', label: 'New signal', history: freshCircuit.getHistory('newSignal') }]);
+    expect(freshSignal[0].transitions).toEqual([{ time: 0, value: 'Z' }]);
+    expect(selectTimingSignals(freshSignal, new Set())).toEqual([]);
   });
 
   it('records clock and DFF transitions at their simulated times', () => {

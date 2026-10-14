@@ -30,3 +30,8 @@ export function buildTimingSignals(signals: TimingSignalInput[]): TimingSignal[]
     ]
   }));
 }
+
+/** Return only the signal rows explicitly selected by their net names. */
+export function selectTimingSignals(signals: TimingSignal[], selectedNetNames: ReadonlySet<string>): TimingSignal[] {
+  return signals.filter((signal) => selectedNetNames.has(signal.netName));
+}

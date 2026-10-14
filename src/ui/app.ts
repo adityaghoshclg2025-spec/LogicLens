@@ -18,9 +18,10 @@ import {
   generateTruthTable,
   TruthTableResult,
   explainCircuit,
-  CircuitExplanation,
-  buildTimingSignals
+  buildTimingSignals,
+  selectTimingSignals
 } from '../index.js';
+import { renderCircuitExplanationHTML } from './explainRenderer.js';
 
 export interface ComponentSpec {
   width: number;
@@ -123,6 +124,9 @@ export class LogicLensUI {
   private draftWire: DraftWire | null = null;
   private explainedOutputId: string | null = null;
   private explanationActive = false;
+  private selectedTimingNets = new Set<string>();
+  private knownTimingNets = new Set<string>();
+  private timingSelectionInitialized = false;
 
   constructor() {
     this.circuit = new Circuit();
@@ -137,6 +141,7 @@ export class LogicLensUI {
    * INPUT B (1) ──/
    */
   public initDemoANDCircuit(): void {
+    this.resetTimingSelection();
     this.circuit = new Circuit();
     this.visualComponents.clear();
     this.visualWires.clear();
@@ -162,6 +167,7 @@ export class LogicLensUI {
    * INPUT A (0) ──> NOT ──> OUTPUT (OUT)
    */
   public initDemoNOTCircuit(): void {
+    this.resetTimingSelection();
     this.circuit = new Circuit();
     this.visualComponents.clear();
     this.visualWires.clear();
@@ -328,10 +334,31 @@ export class LogicLensUI {
 
     document.getElementById('btn-clear')?.addEventListener('click', () => {
       this.circuit = new Circuit();
+      this.resetTimingSelection();
       this.visualComponents.clear();
       this.visualWires.clear();
       this.selectedCompId = null;
       this.selectedWireId = null;
+      this.updateUI();
+    });
+
+    document.getElementById('btn-timing-select-all')?.addEventListener('click', () => {
+      this.selectedTimingNets = new Set(Array.from(this.visualWires.values(), (wire) => wire.netName));
+      this.timingSelectionInitialized = true;
+      this.updateUI();
+    });
+    document.getElementById('btn-timing-clear-selection')?.addEventListener('click', () => {
+      this.selectedTimingNets.clear();
+      this.timingSelectionInitialized = true;
+      this.updateUI();
+    });
+    document.getElementById('timing-signal-list')?.addEventListener('change', (event) => {
+      const target = event.target as HTMLInputElement;
+      const netName = target.getAttribute('data-timing-net');
+      if (!netName) return;
+      if (target.checked) this.selectedTimingNets.add(netName);
+      else this.selectedTimingNets.delete(netName);
+      this.timingSelectionInitialized = true;
       this.updateUI();
     });
 
@@ -1217,31 +1244,16 @@ export class LogicLensUI {
       container.innerHTML = '<p class="diag-desc">Add an output probe to explain a circuit.</p>';
       return;
     }
-    const result = explainCircuit(this.circuit, this.explainedOutputId);
+    const labels = new Map(Array.from(this.visualComponents.values(), (component) => [component.simId, component.label]));
+    const result = explainCircuit(this.circuit, this.explainedOutputId, (componentId) => labels.get(componentId));
     if (!result) {
       container.innerHTML = '<p class="diag-desc">Select a valid output probe.</p>';
       return;
     }
-    container.innerHTML = this.renderCircuitExplanation(result);
-  }
-
-  private renderCircuitExplanation(result: CircuitExplanation): string {
-    const steps = result.steps.map((step, index) => {
-      const inputs = step.inputs.length
-        ? `<div class="diag-desc">Inputs: ${step.inputs.map((input) => `In${input.pin} = <strong>${input.value}</strong>${input.net ? ` on ${this.escapeHtml(input.net)}` : ' (unconnected)'}${input.floating ? ' (floating)' : ''}`).join('; ')}</div>`
-        : '';
-      const outputs = step.outputs.map((output) => `Out${output.pin} = <strong>${output.value}</strong>${output.net ? ` on ${this.escapeHtml(output.net)}` : ''}`).join('; ');
-      return `<div class="diag-card ${step.kind === 'unsupported' ? 'warning' : step.kind === 'sequential' ? 'warning' : 'success'}">
-        <div class="diag-header"><span class="status-icon">${index + 1}</span><strong>${this.escapeHtml(step.label)} (${this.escapeHtml(step.type)})</strong></div>
-        ${inputs}<p class="diag-desc">${this.escapeHtml(step.description)}</p>
-        ${outputs ? `<p class="diag-desc">Output: ${outputs}</p>` : ''}
-        ${step.note ? `<p class="diag-desc">${this.escapeHtml(step.note)}</p>` : ''}
-      </div>`;
-    }).join('');
-    const notes = result.notes.length
-      ? `<div class="diag-card warning"><div class="diag-header"><span class="status-icon">!</span><strong>Signal notes</strong></div><ul class="diag-list">${result.notes.map((note) => `<li>${this.escapeHtml(note)}</li>`).join('')}</ul></div>`
-      : '';
-    return `<p class="diag-desc">Current value at ${this.escapeHtml(result.outputLabel)}: <strong>${result.outputValue}</strong></p>${steps || '<p class="diag-desc">No upstream components found.</p>'}${notes}`;
+    const detailsWereOpen = container.querySelector('details')?.open ?? false;
+    container.innerHTML = renderCircuitExplanationHTML(result);
+    const details = container.querySelector('details');
+    if (details) details.open = detailsWereOpen;
   }
 
   private updateInspector(): void {
@@ -1396,9 +1408,10 @@ export class LogicLensUI {
 
   private renderTimingDiagram(wires: VisualWire[]): void {
     const container = document.getElementById('waveform-preview');
-    if (!container) return;
+    const selectionList = document.getElementById('timing-signal-list');
+    if (!container || !selectionList) return;
 
-    const byNet = new Map<string, { label: string; connections: string[] }>();
+    const byNet = new Map<string, { connections: string[] }>();
     for (const wire of wires) {
       const source = this.visualComponents.get(wire.fromCompId);
       const target = this.visualComponents.get(wire.toCompId);
@@ -1406,7 +1419,7 @@ export class LogicLensUI {
       const connection = `${source.label}.Out${wire.fromPinIndex} → ${target.label}.In${wire.toPinIndex}`;
       const existing = byNet.get(wire.netName);
       if (existing) existing.connections.push(connection);
-      else byNet.set(wire.netName, { label: connection, connections: [connection] });
+      else byNet.set(wire.netName, { connections: [connection] });
     }
 
     const signals = buildTimingSignals(Array.from(byNet, ([netName, info]) => ({
@@ -1414,8 +1427,32 @@ export class LogicLensUI {
       label: info.connections.join(' · '),
       history: this.circuit.getHistory(netName)
     })));
+    const currentNames = new Set(signals.map((signal) => signal.netName));
+    const wasAllSelected = this.selectedTimingNets.size === this.knownTimingNets.size &&
+      Array.from(this.knownTimingNets).every((netName) => this.selectedTimingNets.has(netName));
+    for (const netName of this.selectedTimingNets) {
+      if (!currentNames.has(netName)) this.selectedTimingNets.delete(netName);
+    }
+    if (!this.timingSelectionInitialized) {
+      this.selectedTimingNets = new Set(currentNames);
+      this.timingSelectionInitialized = true;
+    } else if (wasAllSelected) {
+      for (const netName of currentNames) this.selectedTimingNets.add(netName);
+    }
+    this.knownTimingNets = currentNames;
+
+    selectionList.innerHTML = signals.length
+      ? signals.map((signal) => `<label class="timing-signal-option"><input type="checkbox" data-timing-net="${this.escapeHtml(signal.netName)}" ${this.selectedTimingNets.has(signal.netName) ? 'checked' : ''}><span>${this.escapeHtml(signal.label)}</span><small>${this.escapeHtml(signal.netName)}</small></label>`).join('')
+      : '<div class="waveform-empty">Connect wires to choose signals.</div>';
+
     if (signals.length === 0) {
       container.innerHTML = '<div class="waveform-empty">Connect circuit signals to view their timing.</div>';
+      return;
+    }
+
+    const displayedSignals = selectTimingSignals(signals, this.selectedTimingNets);
+    if (displayedSignals.length === 0) {
+      container.innerHTML = '<div class="waveform-empty">Select one or more signals above to display their timing.</div>';
       return;
     }
 
@@ -1427,7 +1464,7 @@ export class LogicLensUI {
     const rowHeight = 54;
     const top = 28;
     const axisHeight = 26;
-    const svgHeight = top + signals.length * rowHeight + axisHeight;
+    const svgHeight = top + displayedSignals.length * rowHeight + axisHeight;
     const xAt = (time: number) => labelWidth + Math.min(timeEnd, Math.max(0, time)) * tickWidth;
     const yAt = (row: number, value: string) => {
       const y = top + row * rowHeight;
@@ -1438,7 +1475,7 @@ export class LogicLensUI {
     };
     const colors: Record<string, string> = { '0': '#94a3b8', '1': '#34d399', X: '#f43f5e', Z: '#fbbf24' };
     const tickStep = Math.max(1, Math.ceil(timeEnd / 10));
-    let svg = `<svg class="timing-svg" width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}" role="img" aria-label="Timing diagram of ${signals.length} circuit signals">`;
+    let svg = `<svg class="timing-svg" width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}" role="img" aria-label="Timing diagram of ${displayedSignals.length} circuit signals">`;
     svg += `<rect width="${svgWidth}" height="${svgHeight}" fill="#111622"/>`;
 
     const ticks: number[] = [];
@@ -1446,12 +1483,12 @@ export class LogicLensUI {
     if (ticks[ticks.length - 1] !== timeEnd) ticks.push(timeEnd);
     for (const time of ticks) {
       const x = xAt(time);
-      svg += `<line x1="${x}" y1="${top - 8}" x2="${x}" y2="${top + signals.length * rowHeight - 7}" stroke="#263247" stroke-width="1"/>`;
-      svg += `<text x="${x}" y="${top + signals.length * rowHeight + 13}" text-anchor="middle" class="timing-axis-label">${time}</text>`;
+      svg += `<line x1="${x}" y1="${top - 8}" x2="${x}" y2="${top + displayedSignals.length * rowHeight - 7}" stroke="#263247" stroke-width="1"/>`;
+      svg += `<text x="${x}" y="${top + displayedSignals.length * rowHeight + 13}" text-anchor="middle" class="timing-axis-label">${time}</text>`;
     }
-    svg += `<line x1="${xAt(this.circuit.time)}" y1="${top - 8}" x2="${xAt(this.circuit.time)}" y2="${top + signals.length * rowHeight - 7}" stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="4 3"/>`;
+    svg += `<line x1="${xAt(this.circuit.time)}" y1="${top - 8}" x2="${xAt(this.circuit.time)}" y2="${top + displayedSignals.length * rowHeight - 7}" stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="4 3"/>`;
 
-    signals.forEach((signal, row) => {
+    displayedSignals.forEach((signal, row) => {
       const rowTop = top + row * rowHeight;
       svg += `<line x1="0" y1="${rowTop + rowHeight - 1}" x2="${svgWidth}" y2="${rowTop + rowHeight - 1}" stroke="#263247"/>`;
       const shortLabel = signal.label.length > 36 ? `${signal.label.slice(0, 33)}…` : signal.label;
@@ -1481,7 +1518,13 @@ export class LogicLensUI {
     });
     svg += `<text x="${labelWidth + plotWidth / 2}" y="${svgHeight - 3}" text-anchor="middle" class="timing-axis-label">Simulation time (ticks)</text></svg>`;
 
-    container.innerHTML = `<div class="timing-meta">${signals.length} signal${signals.length === 1 ? '' : 's'} · current time t=${this.circuit.time}</div><div class="timing-scroll">${svg}</div><div class="timing-legend"><span><i class="timing-swatch val-0"></i>0</span><span><i class="timing-swatch val-1"></i>1</span><span><i class="timing-swatch val-X"></i>X</span><span><i class="timing-swatch val-Z"></i>Z</span></div>`;
+    container.innerHTML = `<div class="timing-meta">${displayedSignals.length} of ${signals.length} signal${signals.length === 1 ? '' : 's'} · current time t=${this.circuit.time}</div><div class="timing-scroll">${svg}</div><div class="timing-legend"><span><i class="timing-swatch val-0"></i>0</span><span><i class="timing-swatch val-1"></i>1</span><span><i class="timing-swatch val-X"></i>X</span><span><i class="timing-swatch val-Z"></i>Z</span></div>`;
+  }
+
+  private resetTimingSelection(): void {
+    this.selectedTimingNets.clear();
+    this.knownTimingNets.clear();
+    this.timingSelectionInitialized = false;
   }
 
   private updateDiagnostics(): void {

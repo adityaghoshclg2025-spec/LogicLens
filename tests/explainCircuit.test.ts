@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Circuit } from '../src/circuit.js';
-import { AND, BUFFER, DFF, INPUT, NOT, OR, OUTPUT } from '../src/component.js';
+import { AND, BUFFER, DFF, INPUT, NAND, NOR, NOT, OR, OUTPUT, XNOR, XOR } from '../src/component.js';
 import { explainCircuit } from '../src/explainCircuit.js';
 
 function buildOutput(circuit: Circuit, label = 'OUT'): string {
@@ -26,6 +26,15 @@ describe('Explain My Circuit dependency trace', () => {
     expect(explanation.steps.map((step) => step.type)).toEqual(['INPUT', 'INPUT', 'AND', 'OUTPUT']);
     expect(explanation.steps[2].inputs.map((input) => input.value)).toEqual(['1', '0']);
     expect(explanation.steps[2].outputs[0].value).toBe('0');
+    expect(explanation.steps[2].description).toContain('B is LOW');
+    expect(explanation.steps[2].description).toContain('output is LOW');
+
+    circuit.setInput(b, '1');
+    circuit.settle();
+    const updated = explainCircuit(circuit, output)!;
+    expect(updated.outputValue).toBe('1');
+    expect(updated.steps.find((step) => step.type === 'AND')?.inputs.map((input) => input.value)).toEqual(['1', '1']);
+    expect(updated.steps.find((step) => step.type === 'AND')?.description).toContain('output is HIGH');
   });
 
   it('traces a multigate circuit in dependency order', () => {
@@ -43,6 +52,31 @@ describe('Explain My Circuit dependency trace', () => {
     const explanation = explainCircuit(circuit, output)!;
     expect(explanation.steps.map((step) => step.type)).toEqual(['INPUT', 'NOT', 'BUFFER', 'OUTPUT']);
     expect(explanation.outputValue).toBe('0');
+  });
+
+  it.each([
+    { gate: NAND, label: 'NAND', inputs: ['1', '1'] as const, expected: '0', phrase: 'NAND inverts it to LOW' },
+    { gate: NOR, label: 'NOR', inputs: ['0', '0'] as const, expected: '1', phrase: 'NOR inverts it to HIGH' },
+    { gate: XOR, label: 'XOR', inputs: ['1', '0'] as const, expected: '1', phrase: 'They differ' },
+    { gate: XNOR, label: 'XNOR', inputs: ['1', '1'] as const, expected: '1', phrase: 'They match' }
+  ])('explains $label using its current input values', ({ gate, inputs, expected, phrase }) => {
+    const circuit = new Circuit();
+    const a = circuit.addComponent(INPUT, 'A');
+    const b = circuit.addComponent(INPUT, 'B');
+    const operation = circuit.addComponent(gate, 'Gate');
+    const output = buildOutput(circuit);
+    circuit.wire(a, 0, operation, 0, 'inputA');
+    circuit.wire(b, 0, operation, 1, 'inputB');
+    circuit.wire(operation, 0, output, 0, 'result');
+    circuit.setInput(a, inputs[0]);
+    circuit.setInput(b, inputs[1]);
+    circuit.settle();
+
+    const explanation = explainCircuit(circuit, output)!;
+    const gateStep = explanation.steps.find((step) => step.componentId === operation)!;
+    expect(explanation.outputValue).toBe(expected);
+    expect(gateStep.inputs.map((input) => input.value)).toEqual(inputs);
+    expect(gateStep.description).toContain(phrase);
   });
 
   it('lists shared upstream dependencies once', () => {
@@ -89,6 +123,7 @@ describe('Explain My Circuit dependency trace', () => {
     const xExplanation = explainCircuit(xCircuit, xOutput)!;
     expect(xExplanation.outputValue).toBe('X');
     expect(xExplanation.notes.some((note) => note.startsWith('X means'))).toBe(true);
+    expect(xExplanation.warnings.some((warning) => warning.kind === 'unknown')).toBe(true);
   });
 
   it('marks sequential and unsupported components as boundaries, and handles unconnected outputs', () => {
@@ -103,7 +138,8 @@ describe('Explain My Circuit dependency trace', () => {
     circuit.settle();
     const sequential = explainCircuit(circuit, output)!;
     expect(sequential.steps.find((step) => step.type === 'DFF')?.kind).toBe('sequential');
-    expect(sequential.steps.find((step) => step.type === 'DFF')?.note).toContain('clock edges');
+    expect(sequential.steps.find((step) => step.type === 'DFF')?.note).toContain('clock edge');
+    expect(sequential.warnings.some((warning) => warning.kind === 'sequential')).toBe(true);
 
     const customCircuit = new Circuit();
     const source = customCircuit.addComponent(INPUT, 'SRC');
@@ -124,5 +160,38 @@ describe('Explain My Circuit dependency trace', () => {
     expect(emptyExplanation.outputValue).toBe('Z');
     expect(emptyExplanation.notes.some((note) => note.includes('high impedance'))).toBe(true);
     expect(explainCircuit(emptyCircuit, 'missing')).toBeNull();
+  });
+
+  it('reports conflicting active drivers separately from an unknown X source', () => {
+    const circuit = new Circuit();
+    const low = circuit.addComponent(INPUT, 'LOW');
+    const high = circuit.addComponent(INPUT, 'HIGH');
+    const output = buildOutput(circuit);
+    circuit.wire(low, 0, output, 0, 'sharedBus');
+    circuit.wire(high, 0, output, 0, 'sharedBus');
+    circuit.setInput(low, '0');
+    circuit.setInput(high, '1');
+    circuit.settle();
+
+    const explanation = explainCircuit(circuit, output)!;
+    expect(explanation.outputValue).toBe('X');
+    expect(explanation.warnings.some((warning) => warning.kind === 'contention' && warning.message.includes('drivers disagree'))).toBe(true);
+    expect(circuit.getNetDrivers('sharedBus').map((driver) => driver.value)).toEqual(['0', '1']);
+  });
+
+  it('detects a feedback boundary without claiming to replay its history', () => {
+    const circuit = new Circuit();
+    const source = circuit.addComponent(INPUT, 'A');
+    const gate = circuit.addComponent(AND, 'Loop Gate');
+    const output = buildOutput(circuit);
+    circuit.wire(gate, 0, gate, 0, 'loop');
+    circuit.wire(source, 0, gate, 1, 'source');
+    circuit.connectInput(output, 0, 'loop');
+    circuit.setInput(source, '0');
+    circuit.settle();
+
+    const explanation = explainCircuit(circuit, output)!;
+    expect(explanation.warnings.some((warning) => warning.kind === 'feedback')).toBe(true);
+    expect(explanation.steps.find((step) => step.type === 'AND')?.inputs.map((input) => input.value)).toEqual(['0', '0']);
   });
 });

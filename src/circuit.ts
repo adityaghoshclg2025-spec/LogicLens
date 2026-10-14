@@ -163,6 +163,11 @@ export class Circuit {
     return this.nets.get(netName)?.value ?? 'Z';
   }
 
+  /** Read-only driver snapshot used to explain unknown or contended signals. */
+  getNetDrivers(netName: string): ReadonlyArray<{ id: string; value: LogicValue }> {
+    return this.nets.get(netName)?.getDriverValues() ?? [];
+  }
+
   getHistory(netName: string): HistoryEntry[] {
     return this.nets.get(netName)?.history ?? [];
   }
