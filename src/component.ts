@@ -41,35 +41,101 @@ function isKnown(v: LogicValue): v is '0' | '1' {
  * gate has its SET/RESET input already known resolves immediately, regardless of what
  * its cross-coupled (still-unevaluated) partner is currently reporting.
  */
-function andLike(a: LogicValue, b: LogicValue): LogicValue {
-  if (a === '0' || b === '0') return '0';
-  return isKnown(a) && isKnown(b) ? '1' : 'X';
-}
-
-function orLike(a: LogicValue, b: LogicValue): LogicValue {
-  if (a === '1' || b === '1') return '1';
-  return isKnown(a) && isKnown(b) ? '0' : 'X';
-}
-
 function invert(v: LogicValue): LogicValue {
   return v === '0' ? '1' : v === '1' ? '0' : 'X';
 }
 
-const twoInput = (name: string, fn: (a: LogicValue, b: LogicValue) => LogicValue): ComponentDefinition => ({
-  type: name,
-  inputCount: 2,
-  outputCount: 1,
-  delay: 1,
-  evaluate: ([a, b]) => ({ outputs: [fn(a, b)], nextState: undefined }),
-});
+export function evaluateAnd(inputs: LogicValue[]): LogicValue {
+  if (inputs.some((v) => v === '0')) return '0';
+  return inputs.length > 0 && inputs.every(isKnown) ? '1' : 'X';
+}
 
-export const AND = twoInput('AND', andLike);
-export const OR = twoInput('OR', orLike);
-export const NAND = twoInput('NAND', (a, b) => invert(andLike(a, b)));
-export const NOR = twoInput('NOR', (a, b) => invert(orLike(a, b)));
-// XOR/XNOR have no dominant single input — an unknown operand always makes the result unknown.
-export const XOR = twoInput('XOR', (a, b) => (isKnown(a) && isKnown(b) ? (a !== b ? '1' : '0') : 'X'));
-export const XNOR = twoInput('XNOR', (a, b) => (isKnown(a) && isKnown(b) ? (a === b ? '1' : '0') : 'X'));
+export function evaluateOr(inputs: LogicValue[]): LogicValue {
+  if (inputs.some((v) => v === '1')) return '1';
+  return inputs.length > 0 && inputs.every(isKnown) ? '0' : 'X';
+}
+
+export function evaluateXor(inputs: LogicValue[]): LogicValue {
+  if (inputs.length === 0 || !inputs.every(isKnown)) return 'X';
+  const highCount = inputs.filter((v) => v === '1').length;
+  return highCount % 2 === 1 ? '1' : '0';
+}
+
+export function evaluateXnor(inputs: LogicValue[]): LogicValue {
+  if (inputs.length === 0 || !inputs.every(isKnown)) return 'X';
+  const highCount = inputs.filter((v) => v === '1').length;
+  return highCount % 2 === 0 ? '1' : '0';
+}
+
+export const CONFIGURABLE_GATE_TYPES = ['AND', 'OR', 'NAND', 'NOR', 'XOR', 'XNOR'] as const;
+export type ConfigurableGateType = (typeof CONFIGURABLE_GATE_TYPES)[number];
+
+export function isConfigurableGate(type: string): type is ConfigurableGateType {
+  return CONFIGURABLE_GATE_TYPES.includes(type.toUpperCase() as ConfigurableGateType);
+}
+
+/**
+ * Factory for creating gate definitions with a configurable number of inputs.
+ * NOT is strictly single-input.
+ */
+export function makeGate(type: string, inputCount = 2): ComponentDefinition {
+  const upper = type.toUpperCase();
+  if (upper === 'NOT') {
+    if (inputCount !== 1) {
+      throw new Error('NOT gate must remain a single-input gate');
+    }
+    return NOT;
+  }
+  if (upper === 'BUFFER') {
+    if (inputCount !== 1) {
+      throw new Error('BUFFER must have 1 input');
+    }
+    return BUFFER;
+  }
+
+  if (inputCount < 2) {
+    throw new Error(`${upper} gate must have at least 2 inputs`);
+  }
+
+  let evalFn: (inputs: LogicValue[]) => LogicValue;
+  switch (upper) {
+    case 'AND':
+      evalFn = evaluateAnd;
+      break;
+    case 'OR':
+      evalFn = evaluateOr;
+      break;
+    case 'NAND':
+      evalFn = (inputs) => invert(evaluateAnd(inputs));
+      break;
+    case 'NOR':
+      evalFn = (inputs) => invert(evaluateOr(inputs));
+      break;
+    case 'XOR':
+      evalFn = evaluateXor;
+      break;
+    case 'XNOR':
+      evalFn = evaluateXnor;
+      break;
+    default:
+      throw new Error(`Unsupported gate type: ${type}`);
+  }
+
+  return {
+    type: upper,
+    inputCount,
+    outputCount: 1,
+    delay: 1,
+    evaluate: (inputs) => ({ outputs: [evalFn(inputs)], nextState: undefined }),
+  };
+}
+
+export const AND = makeGate('AND', 2);
+export const OR = makeGate('OR', 2);
+export const NAND = makeGate('NAND', 2);
+export const NOR = makeGate('NOR', 2);
+export const XOR = makeGate('XOR', 2);
+export const XNOR = makeGate('XNOR', 2);
 
 export const NOT: ComponentDefinition = {
   type: 'NOT',

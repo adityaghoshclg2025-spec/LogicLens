@@ -417,7 +417,7 @@ body, html {
   background-color: var(--bg-card);
   border: 1.5px solid var(--border-subtle);
   border-radius: 8px;
-  padding: 0.35rem 0.5rem;
+  padding: 0;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
   cursor: move;
   user-select: none;
@@ -429,8 +429,298 @@ body, html {
 .circuit-node.clock-node { width: 110px; height: 56px; }
 .circuit-node.not-node, .circuit-node.buffer-node { width: 120px; height: 60px; }
 .circuit-node.and-node, .circuit-node.or-node, .circuit-node.nand-node,
-.circuit-node.nor-node, .circuit-node.xor-node, .circuit-node.xnor-node { width: 130px; height: 76px; }
+.circuit-node.nor-node, .circuit-node.xor-node, .circuit-node.xnor-node { width: 130px; min-height: 76px; }
 .circuit-node.dff-node { width: 130px; height: 84px; }
+
+/* Standard logic gate node visual container */
+.circuit-node.gate-node {
+  background-color: rgba(17, 24, 39, 0.75);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 8px;
+  backdrop-filter: blur(4px);
+}
+
+.circuit-node.gate-node:hover {
+  border-color: rgba(56, 189, 248, 0.6);
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.25);
+}
+
+.circuit-node.gate-node.selected {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.3), 0 0 18px rgba(56, 189, 248, 0.5);
+}
+
+/* ==========================================================================
+   Schematic Mode Styles
+   ========================================================================== */
+.circuit-canvas.schematic-mode {
+  background-color: #0b0f19 !important;
+  background-image: radial-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px) !important;
+  background-size: 20px 20px !important;
+}
+
+.schematic-mode .circuit-node.gate-node {
+  background-color: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+.schematic-mode .circuit-node.gate-node::before {
+  display: none !important;
+}
+
+.schematic-mode .circuit-node.gate-node .node-header {
+  display: none !important;
+}
+
+.schematic-mode .circuit-node.gate-node.selected::before {
+  display: block !important;
+  border: 1px dashed var(--accent-cyan) !important;
+  border-radius: 6px !important;
+}
+
+/* Schematic Gate Labels */
+.schematic-gate-label {
+  display: none;
+  position: absolute;
+  top: -18px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #cbd5e1;
+  white-space: nowrap;
+  pointer-events: none;
+  letter-spacing: 0.5px;
+}
+
+.schematic-mode .schematic-gate-label {
+  display: block;
+}
+
+/* Schematic Pin Labels (A, B, Y) */
+.schematic-pin-label {
+  display: none;
+}
+
+.schematic-mode .schematic-pin-label {
+  display: block;
+}
+
+/* Schematic Hover & Selection feedback */
+.schematic-mode .circuit-node:hover:not(.selected)::before {
+  display: block !important;
+  border: 1px dashed rgba(56, 189, 248, 0.45) !important;
+  border-radius: 6px !important;
+}
+
+.schematic-mode .circuit-node.selected::before {
+  display: block !important;
+  border: 1.5px dashed var(--accent-cyan) !important;
+  border-radius: 6px !important;
+}
+
+/* Schematic Input Switch */
+.schematic-mode .circuit-node.input-node {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+.schematic-mode .circuit-node.input-node .node-header {
+  display: none !important;
+}
+.schematic-mode .circuit-node.input-node::before {
+  display: none !important;
+}
+.schematic-mode .circuit-node.input-node .input-ctrl {
+  position: absolute;
+  left: 14px;
+  top: 36px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.schematic-mode .circuit-node.input-node .input-ctrl .toggle-btn {
+  width: 44px;
+  height: 28px;
+  font-size: 0.85rem;
+}
+.schematic-mode .circuit-node.input-node::after {
+  content: '';
+  position: absolute;
+  left: 62px;
+  right: 0;
+  top: 36px;
+  height: 2px;
+  background-color: #94a3b8;
+  pointer-events: none;
+}
+
+/* Schematic Output Probe */
+.schematic-mode .circuit-node.output-node {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+.schematic-mode .circuit-node.output-node .node-header {
+  display: none !important;
+}
+.schematic-mode .circuit-node.output-node::before {
+  display: none !important;
+}
+.schematic-mode .circuit-node.output-node .output-ctrl {
+  position: absolute;
+  right: 14px;
+  top: 36px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+}
+.schematic-mode .circuit-node.output-node .output-ctrl .value-pill {
+  min-width: 44px;
+  height: 28px;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.schematic-mode .circuit-node.output-node::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  width: 52px;
+  top: 36px;
+  height: 2px;
+  background-color: #94a3b8;
+  pointer-events: none;
+}
+
+/* Schematic Clock Generator */
+.schematic-mode .circuit-node.clock-node {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+.schematic-mode .circuit-node.clock-node .node-header {
+  display: none !important;
+}
+.schematic-mode .circuit-node.clock-node::before {
+  display: none !important;
+}
+.schematic-mode .circuit-node.clock-node .clock-display {
+  position: absolute;
+  left: 10px;
+  top: 36px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.schematic-mode .circuit-node.clock-node::after {
+  content: '';
+  position: absolute;
+  left: 74px;
+  right: 0;
+  top: 36px;
+  height: 2px;
+  background-color: #94a3b8;
+  pointer-events: none;
+}
+
+/* Schematic Port Dots */
+.schematic-mode .port-dot {
+  width: 8px;
+  height: 8px;
+  border-width: 1.5px;
+  background-color: #0b0f19;
+  border-color: #94a3b8;
+}
+
+.schematic-mode .port-dot.connected {
+  width: 6px;
+  height: 6px;
+  background-color: #38bdf8;
+  border-color: #38bdf8;
+  box-shadow: 0 0 4px #38bdf8;
+}
+
+/* Mode toggle button in top nav */
+.view-mode-toggle {
+  display: flex;
+  background-color: var(--bg-main);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.btn-mode {
+  padding: 0.3rem 0.65rem;
+  font-size: 0.775rem;
+  font-weight: 600;
+  border-radius: 4px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.btn-mode:hover:not(.active) {
+  color: var(--text-main);
+  background-color: var(--bg-hover);
+}
+
+.btn-mode.active {
+  background-color: #0284c7;
+  color: #ffffff;
+  box-shadow: 0 0 8px rgba(2, 132, 199, 0.4);
+}
+
+/* Inspector Input Count Button Group */
+.input-count-prop-row {
+  align-items: center;
+}
+
+.input-count-btn-group {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.btn-input-count {
+  width: 28px;
+  height: 26px;
+  border-radius: 4px;
+  background-color: var(--bg-main, #0b0e14);
+  border: 1px solid var(--border-subtle, #263247);
+  color: var(--text-muted, #94a3b8);
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-input-count:hover {
+  border-color: var(--accent-cyan, #38bdf8);
+  color: #ffffff;
+}
+
+.btn-input-count.active {
+  background-color: #0284c7;
+  border-color: #38bdf8;
+  color: #ffffff;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.5);
+}
 
 .circuit-node:hover {
   border-color: rgba(56, 189, 248, 0.5);
@@ -536,10 +826,16 @@ body, html {
 }
 
 .node-header {
+  position: absolute;
+  top: 4px;
+  left: 8px;
+  right: 8px;
+  height: 18px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 0.15rem;
+  pointer-events: none;
+  z-index: 5;
 }
 .node-title {
   font-family: var(--font-heading);
@@ -557,11 +853,13 @@ body, html {
 }
 
 .node-body {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: calc(100% - 18px);
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: visible;
 }
 
 .gate-symbol-center {

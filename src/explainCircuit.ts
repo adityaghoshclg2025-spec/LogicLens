@@ -61,7 +61,11 @@ function valueName(value: LogicValue): string {
 function pinName(type: string, pin: number): string {
   if (type === 'DFF') return pin === 0 ? 'D' : pin === 1 ? 'clock' : `input ${pin + 1}`;
   if (type === 'NOT' || type === 'BUFFER') return 'input';
-  return pin === 0 ? 'A' : pin === 1 ? 'B' : `input ${pin + 1}`;
+  if (pin === 0) return 'A';
+  if (pin === 1) return 'B';
+  if (pin === 2) return 'C';
+  if (pin === 3) return 'D';
+  return `input ${pin + 1}`;
 }
 
 function explainGate(type: string, inputs: ExplanationInput[], output: LogicValue): string {
@@ -96,12 +100,22 @@ function explainGate(type: string, inputs: ExplanationInput[], output: LogicValu
   }
 
   if (type === 'XOR' || type === 'XNOR') {
-    if (a && b && (a.value === '0' || a.value === '1') && (b.value === '0' || b.value === '1')) {
-      const match = a.value === b.value;
-      const isHigh = type === 'XOR' ? !match : match;
-      return `${type} is HIGH when inputs ${type === 'XOR' ? 'differ' : 'match'}. They ${match ? 'match' : 'differ'}, so the output is ${isHigh ? 'HIGH' : 'LOW'}.`;
+    if (inputs.length === 2) {
+      if (a && b && (a.value === '0' || a.value === '1') && (b.value === '0' || b.value === '1')) {
+        const match = a.value === b.value;
+        const isHigh = type === 'XOR' ? !match : match;
+        return `${type} is HIGH when inputs ${type === 'XOR' ? 'differ' : 'match'}. They ${match ? 'match' : 'differ'}, so the output is ${isHigh ? 'HIGH' : 'LOW'}.`;
+      }
+      return `${type} needs known 0 or 1 values to compare its inputs. At least one input is unknown or high-impedance, so the output is ${valueName(output)}.`;
     }
-    return `${type} needs known 0 or 1 values to compare its inputs. At least one input is unknown or high-impedance, so the output is ${valueName(output)}.`;
+
+    if (named.every((input) => input.value === '0' || input.value === '1')) {
+      const highCount = named.filter((input) => input.value === '1').length;
+      const isOdd = highCount % 2 === 1;
+      const isHigh = type === 'XOR' ? isOdd : !isOdd;
+      return `${type} is HIGH when an ${type === 'XOR' ? 'odd' : 'even'} number of inputs are HIGH. There ${highCount === 1 ? 'is 1 HIGH input' : `are ${highCount} HIGH inputs`} (${isOdd ? 'odd' : 'even'}), so the output is ${isHigh ? 'HIGH' : 'LOW'}.`;
+    }
+    return `${type} needs known 0 or 1 values on all inputs to calculate parity. At least one input is unknown or high-impedance, so the output is ${valueName(output)}.`;
   }
 
   if (type === 'NOT') {

@@ -1,6 +1,6 @@
 import { EventQueue } from './eventQueue.js';
 import { Net } from './net.js';
-import type { ComponentDefinition, ComponentInstance } from './component.js';
+import { makeGate, isConfigurableGate, type ComponentDefinition, type ComponentInstance } from './component.js';
 import type { LogicValue, HistoryEntry } from './types.js';
 
 export class OscillationError extends Error {
@@ -67,6 +67,61 @@ export class Circuit {
     });
 
     return this.components.delete(id);
+  }
+
+  /**
+   * Updates the number of input pins for a configurable gate (AND, OR, NAND, NOR, XOR, XNOR).
+   * Preserves existing connections where possible. If pins are removed, their reader connections
+   * are safely cleaned up.
+   */
+  setComponentInputCount(id: string, newInputCount: number): void {
+    const inst = this.components.get(id);
+    if (!inst) throw new Error(`Unknown component ${id}`);
+
+    if (inst.def.type === 'NOT') {
+      if (newInputCount !== 1) {
+        throw new Error('NOT gate must remain a single-input gate');
+      }
+      return;
+    }
+
+    if (!isConfigurableGate(inst.def.type)) {
+      throw new Error(`Component type ${inst.def.type} does not support configurable input counts`);
+    }
+
+    if (newInputCount < 2) {
+      throw new Error(`Configurable gate ${inst.def.type} requires at least 2 inputs`);
+    }
+
+    const currentCount = inst.inputNetIds.length;
+    if (newInputCount === currentCount) return;
+
+    if (newInputCount < currentCount) {
+      // Disconnect pins that are being trimmed
+      for (let i = newInputCount; i < currentCount; i++) {
+        const netName = inst.inputNetIds[i];
+        if (netName) {
+          const net = this.nets.get(netName);
+          if (net) {
+            net.removeReader(id);
+            if (net.readerComponentIds.size === 0 && net.hasNoDrivers) {
+              this.nets.delete(netName);
+            }
+          }
+        }
+      }
+      inst.inputNetIds = inst.inputNetIds.slice(0, newInputCount);
+    } else {
+      // Expand input array with empty nets
+      const extra = new Array(newInputCount - currentCount).fill('');
+      inst.inputNetIds = [...inst.inputNetIds, ...extra];
+    }
+
+    // Update component definition
+    inst.def = makeGate(inst.def.type, newInputCount);
+
+    // Schedule re-evaluation so output reflects the new input count
+    this.queue.schedule(this.time, () => this.evaluateComponent(id));
   }
 
   getComponent(id: string): ComponentInstance | undefined {

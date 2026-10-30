@@ -12,6 +12,8 @@ import {
   OUTPUT,
   DFF,
   makeClock,
+  makeGate,
+  isConfigurableGate,
   BUILTIN_GATES,
   ComponentDefinition,
   LogicValue,
@@ -22,6 +24,17 @@ import {
   selectTimingSignals
 } from '../index.js';
 import { renderCircuitExplanationHTML } from './explainRenderer.js';
+import { renderGateSymbolSVG } from './gateSymbols.js';
+import {
+  calculatePinWorldCoordinates,
+  getComponentDimensions,
+  getComponentPinLayout
+} from './componentGeometry.js';
+
+export function isStandardGate(type: string): boolean {
+  const upper = type.toUpperCase();
+  return ['AND', 'OR', 'NAND', 'NOR', 'XOR', 'XNOR', 'NOT', 'BUFFER'].includes(upper);
+}
 
 export interface ComponentSpec {
   width: number;
@@ -128,10 +141,36 @@ export class LogicLensUI {
   private knownTimingNets = new Set<string>();
   private timingSelectionInitialized = false;
 
+  // View mode state ('editor' | 'schematic')
+  public viewMode: 'editor' | 'schematic' = 'editor';
+
   constructor() {
     this.circuit = new Circuit();
     this.setupEventListeners();
     this.initDemoANDCircuit();
+  }
+
+  public setViewMode(mode: 'editor' | 'schematic'): void {
+    this.viewMode = mode;
+    const canvasContainer = document.getElementById('circuit-canvas');
+    if (canvasContainer) {
+      if (mode === 'schematic') {
+        canvasContainer.classList.add('schematic-mode');
+      } else {
+        canvasContainer.classList.remove('schematic-mode');
+      }
+    }
+    const btnEditor = document.getElementById('btn-mode-editor');
+    const btnSchematic = document.getElementById('btn-mode-schematic');
+    if (btnEditor && btnSchematic) {
+      btnEditor.classList.toggle('active', mode === 'editor');
+      btnSchematic.classList.toggle('active', mode === 'schematic');
+    }
+    this.renderCanvas();
+  }
+
+  public getViewMode(): 'editor' | 'schematic' {
+    return this.viewMode;
   }
 
   /**
@@ -193,11 +232,14 @@ export class LogicLensUI {
     x: number,
     y: number,
     label?: string,
-    initialVal: LogicValue = '0'
+    initialVal: LogicValue = '0',
+    inputCount?: number
   ): VisualComponent {
     let def: ComponentDefinition<any> | undefined;
     if (type === 'CLOCK') {
       def = makeClock(5);
+    } else if (isConfigurableGate(type) && inputCount && inputCount >= 2) {
+      def = makeGate(type, inputCount);
     } else {
       def = (BUILTIN_GATES as Record<string, ComponentDefinition<any>>)[type];
     }
@@ -207,6 +249,8 @@ export class LogicLensUI {
     }
 
     const spec = COMPONENT_SPECS[type] || COMPONENT_SPECS.BUFFER;
+    const dims = getComponentDimensions(type, def.inputCount);
+
     const simId = this.circuit.addComponent(def, label || spec.label);
     const visId = `comp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
@@ -220,8 +264,8 @@ export class LogicLensUI {
       val: type === 'INPUT' ? initialVal : undefined,
       inputCount: def.inputCount,
       outputCount: def.outputCount,
-      width: spec.width,
-      height: spec.height
+      width: dims.width,
+      height: dims.height
     };
 
     if (type === 'INPUT') {
@@ -271,6 +315,47 @@ export class LogicLensUI {
   }
 
   /**
+   * Reconfigures the number of inputs for a gate (e.g. 2, 3, 4 inputs).
+   * Safely unwires any connections to removed pins, updates simulation definition,
+   * adjusts visual dimensions, and settles the circuit.
+   */
+  public setComponentInputCount(visCompId: string, newInputCount: number): void {
+    const comp = this.visualComponents.get(visCompId);
+    if (!comp) return;
+
+    if (comp.type === 'NOT') {
+      throw new Error('NOT gate must remain a single-input gate');
+    }
+
+    if (!isConfigurableGate(comp.type)) return;
+    if (newInputCount < 2 || newInputCount > 8) return;
+    if (newInputCount === comp.inputCount) return;
+
+    // 1. If decreasing inputs, remove any wires connected to input pins that will be removed
+    if (newInputCount < comp.inputCount) {
+      const wiresToDelete = Array.from(this.visualWires.values()).filter(
+        (w) => w.toCompId === visCompId && w.toPinIndex >= newInputCount
+      );
+      wiresToDelete.forEach((w) => this.deleteWire(w.id, false));
+    }
+
+    // 2. Update engine input count
+    this.circuit.setComponentInputCount(comp.simId, newInputCount);
+
+    // 3. Update visual component state
+    const dims = getComponentDimensions(comp.type, newInputCount);
+    comp.inputCount = newInputCount;
+    comp.width = dims.width;
+    comp.height = dims.height;
+
+    // 4. Settle simulation so outputs update immediately
+    this.settleSimulation();
+
+    // 5. Update UI
+    this.updateUI();
+  }
+
+  /**
    * Calculates exact world center coordinates for a component port.
    * Guaranteed to match the visual center of .port-dot DOM elements.
    */
@@ -279,36 +364,15 @@ export class LogicLensUI {
     pinType: 'input' | 'output',
     pinIndex: number
   ): { x: number; y: number } {
-    if (pinType === 'input') {
-      const x = comp.x;
-      let y = comp.y + 36;
-      if (comp.inputCount === 1) {
-        y = comp.y + (comp.type === 'NOT' || comp.type === 'BUFFER' ? 38 : 36);
-      } else if (comp.inputCount === 2) {
-        y = pinIndex === 0 ? comp.y + 34 : comp.y + 58;
-        if (comp.type === 'DFF') {
-          y = pinIndex === 0 ? comp.y + 34 : comp.y + 60;
-        }
-      } else if (comp.inputCount > 2) {
-        y = comp.y + 30 + pinIndex * 20;
-      }
-      return { x, y };
-    } else {
-      const x = comp.x + comp.width;
-      let y = comp.y + 36;
-      if (comp.outputCount === 1) {
-        if (comp.inputCount === 2) {
-          y = comp.y + 46;
-        } else if (comp.type === 'NOT' || comp.type === 'BUFFER') {
-          y = comp.y + 38;
-        } else if (comp.type === 'DFF') {
-          y = comp.y + 47;
-        }
-      } else if (comp.outputCount > 1) {
-        y = comp.y + 30 + pinIndex * 20;
-      }
-      return { x, y };
-    }
+    return calculatePinWorldCoordinates(
+      comp.x,
+      comp.y,
+      comp.type,
+      comp.inputCount,
+      comp.outputCount,
+      pinType,
+      pinIndex
+    );
   }
 
   /**
@@ -376,6 +440,10 @@ export class LogicLensUI {
     // Truth Table Action Buttons & Modal Listeners
     document.getElementById('btn-truth-table')?.addEventListener('click', () => this.openTruthTableModal());
     document.getElementById('btn-generate-tt')?.addEventListener('click', () => this.generateTruthTableInTab());
+
+    // View Mode Toggle Listeners (Editor vs Schematic)
+    document.getElementById('btn-mode-editor')?.addEventListener('click', () => this.setViewMode('editor'));
+    document.getElementById('btn-mode-schematic')?.addEventListener('click', () => this.setViewMode('schematic'));
     document.getElementById('btn-modal-recompute')?.addEventListener('click', () => this.updateTruthTableInModal());
     document.getElementById('btn-close-tt-modal')?.addEventListener('click', () => this.closeTruthTableModal());
     document.getElementById('btn-modal-close')?.addEventListener('click', () => this.closeTruthTableModal());
@@ -1009,9 +1077,15 @@ export class LogicLensUI {
 
     // 1. Render Component Nodes & Port Dots
     this.visualComponents.forEach((comp) => {
+      // Ensure visual dimensions match authoritative geometry
+      const dims = getComponentDimensions(comp.type, comp.inputCount);
+      comp.width = dims.width;
+      comp.height = dims.height;
+
       const nodeEl = document.createElement('div');
       const isSelected = this.selectedCompId === comp.id;
-      nodeEl.className = `circuit-node ${comp.type.toLowerCase()}-node ${isSelected ? 'selected' : ''}`;
+      const isGate = isStandardGate(comp.type);
+      nodeEl.className = `circuit-node ${comp.type.toLowerCase()}-node ${isGate ? 'gate-node' : ''} ${isSelected ? 'selected' : ''}`;
       nodeEl.setAttribute('data-comp-node-id', comp.id);
       nodeEl.style.left = `${comp.x}px`;
       nodeEl.style.top = `${comp.y}px`;
@@ -1045,12 +1119,18 @@ export class LogicLensUI {
         this.updateUI();
       });
 
-      // Component Header
+      // Schematic Mode Floating Gate Label
+      const schematicLabelEl = document.createElement('span');
+      schematicLabelEl.className = 'schematic-gate-label';
+      schematicLabelEl.textContent = comp.label;
+      nodeEl.appendChild(schematicLabelEl);
+
+      // Component Header (Editor Mode)
       const headerEl = document.createElement('div');
       headerEl.className = 'node-header';
       headerEl.innerHTML = `
-        <span class="node-title">${comp.label}</span>
-        <span class="node-type">${comp.type}</span>
+        <span class="node-title">${this.escapeHtml(comp.label)}</span>
+        <span class="node-type">${comp.type}${comp.inputCount > 1 && isConfigurableGate(comp.type) ? ` (${comp.inputCount})` : ''}</span>
       `;
       nodeEl.appendChild(headerEl);
 
@@ -1066,7 +1146,7 @@ export class LogicLensUI {
             <button class="toggle-btn val-${comp.val || '0'}" title="Toggle Switch (0 / 1)">${comp.val || '0'}</button>
           </div>
           <div class="port-dot ${this.isPortConnected(comp.id, 'output', 0) ? 'connected' : ''}"
-               style="position:absolute; left:100%; top:${relY}px; transform:translate(-50%, -50%);"
+               style="position:absolute; left:${comp.width}px; top:${relY}px; transform:translate(-50%, -50%);"
                data-comp-id="${comp.id}" data-pin-type="output" data-pin-index="0"
                title="Output Port (Drag to wire)"></div>
         `;
@@ -1107,17 +1187,16 @@ export class LogicLensUI {
             <span class="value-pill val-${clkVal}">${clkVal}</span>
           </div>
           <div class="port-dot ${this.isPortConnected(comp.id, 'output', 0) ? 'connected' : ''}"
-               style="position:absolute; left:100%; top:${relY}px; transform:translate(-50%, -50%);"
+               style="position:absolute; left:${comp.width}px; top:${relY}px; transform:translate(-50%, -50%);"
                data-comp-id="${comp.id}" data-pin-type="output" data-pin-index="0"
                title="Clock Output Port"></div>
         `;
-      } else {
-        // Gates (AND, OR, NOT, NAND, NOR, XOR, XNOR, BUFFER, DFF)
+      } else if (comp.type === 'DFF') {
         let inputDotsHtml = '';
         for (let i = 0; i < comp.inputCount; i++) {
           const coords = this.getPortCoordinates(comp, 'input', i);
           const relY = coords.y - comp.y;
-          const pinLabel = comp.type === 'DFF' ? (i === 0 ? 'D' : 'CLK') : comp.inputCount > 1 ? `In${i}` : 'In';
+          const pinLabel = i === 0 ? 'D' : 'CLK';
           inputDotsHtml += `
             <div class="port-dot ${this.isPortConnected(comp.id, 'input', i) ? 'connected' : ''}"
                  style="position:absolute; left:0px; top:${relY}px; transform:translate(-50%, -50%);"
@@ -1127,35 +1206,61 @@ export class LogicLensUI {
           `;
         }
 
-        let outputDotsHtml = '';
-        for (let j = 0; j < comp.outputCount; j++) {
-          const coords = this.getPortCoordinates(comp, 'output', j);
-          const relY = coords.y - comp.y;
-          const outLabel = comp.type === 'DFF' ? 'Q' : comp.outputCount > 1 ? `Out${j}` : 'Out';
-          outputDotsHtml += `
-            <div class="port-dot ${this.isPortConnected(comp.id, 'output', j) ? 'connected' : ''}"
-                 style="position:absolute; left:100%; top:${relY}px; transform:translate(-50%, -50%);"
-                 data-comp-id="${comp.id}" data-pin-type="output" data-pin-index="${j}"
-                 title="Output ${j} (${outLabel}) Port"></div>
-            <span class="pin-text-label pin-out" style="position:absolute; right:8px; top:${relY}px; transform:translateY(-50%); font-size:0.625rem; color:var(--text-dim); font-family:var(--font-mono); pointer-events:none;">${outLabel}</span>
-          `;
-        }
-
-        // Center gate icon symbol
-        let symbol = comp.type;
-        if (comp.type === 'AND') symbol = '&';
-        else if (comp.type === 'OR') symbol = '≥1';
-        else if (comp.type === 'NOT') symbol = '1';
-        else if (comp.type === 'BUFFER') symbol = 'BUF';
-        else if (comp.type === 'NAND') symbol = '!&';
-        else if (comp.type === 'NOR') symbol = '!≥1';
-        else if (comp.type === 'XOR') symbol = '=1';
-        else if (comp.type === 'XNOR') symbol = '!=1';
-        else if (comp.type === 'DFF') symbol = 'DFF';
+        const outCoords = this.getPortCoordinates(comp, 'output', 0);
+        const relY = outCoords.y - comp.y;
+        const outputDotsHtml = `
+          <div class="port-dot ${this.isPortConnected(comp.id, 'output', 0) ? 'connected' : ''}"
+               style="position:absolute; left:${comp.width}px; top:${relY}px; transform:translate(-50%, -50%);"
+               data-comp-id="${comp.id}" data-pin-type="output" data-pin-index="0"
+               title="Output (Q) Port"></div>
+          <span class="pin-text-label pin-out" style="position:absolute; right:8px; top:${relY}px; transform:translateY(-50%); font-size:0.625rem; color:var(--text-dim); font-family:var(--font-mono); pointer-events:none;">Q</span>
+        `;
 
         bodyEl.innerHTML = `
           ${inputDotsHtml}
-          <div class="gate-symbol-center">${symbol}</div>
+          <div class="gate-symbol-center">DFF</div>
+          ${outputDotsHtml}
+        `;
+      } else {
+        // Standard digital logic gates (AND, OR, NOT, NAND, NOR, XOR, XNOR, BUFFER)
+        const layout = getComponentPinLayout(comp.type, comp.inputCount, comp.outputCount);
+        const inputCoords: Array<{ x: number; y: number }> = [];
+        let inputDotsHtml = '';
+        for (const inPin of layout.inputs) {
+          inputCoords.push({ x: inPin.x, y: inPin.y });
+          inputDotsHtml += `
+            <div class="port-dot ${this.isPortConnected(comp.id, 'input', inPin.pinIndex) ? 'connected' : ''}"
+                 style="position:absolute; left:${inPin.x}px; top:${inPin.y}px; transform:translate(-50%, -50%);"
+                 data-comp-id="${comp.id}" data-pin-type="input" data-pin-index="${inPin.pinIndex}"
+                 title="Input ${inPin.pinIndex} (${inPin.label}) Port"></div>
+            <span class="schematic-pin-label pin-in" style="position:absolute; left:6px; top:${inPin.y - 8}px; font-size:0.625rem; font-family:var(--font-mono); font-weight:600; color:#94a3b8; pointer-events:none;">${inPin.label}</span>
+          `;
+        }
+
+        const outPin = layout.outputs[0] || { x: comp.width, y: comp.height / 2, label: 'Y' };
+        const outputCoord = { x: outPin.x, y: outPin.y };
+        const outputDotsHtml = `
+          <div class="port-dot ${this.isPortConnected(comp.id, 'output', 0) ? 'connected' : ''}"
+               style="position:absolute; left:${outPin.x}px; top:${outPin.y}px; transform:translate(-50%, -50%);"
+               data-comp-id="${comp.id}" data-pin-type="output" data-pin-index="0"
+               title="Output Port (${outPin.label})"></div>
+          <span class="schematic-pin-label pin-out" style="position:absolute; right:8px; top:${outPin.y - 8}px; font-size:0.625rem; font-family:var(--font-mono); font-weight:600; color:#94a3b8; pointer-events:none;">${outPin.label}</span>
+        `;
+
+        const gateSvg = renderGateSymbolSVG({
+          type: comp.type,
+          width: comp.width,
+          height: comp.height,
+          inputCount: comp.inputCount,
+          isSelected,
+          inputCoords,
+          outputCoord,
+          mode: this.viewMode
+        });
+
+        bodyEl.innerHTML = `
+          ${gateSvg}
+          ${inputDotsHtml}
           ${outputDotsHtml}
         `;
       }
@@ -1327,6 +1432,27 @@ export class LogicLensUI {
       const comp = this.visualComponents.get(this.selectedCompId);
       if (!comp) return;
 
+      let inputsConfigHtml = '';
+      if (isConfigurableGate(comp.type)) {
+        inputsConfigHtml = `
+          <div class="prop-row input-count-prop-row">
+            <span class="prop-label">Gate Inputs:</span>
+            <div class="input-count-btn-group" id="inspector-input-counts">
+              <button class="btn-input-count ${comp.inputCount === 2 ? 'active' : ''}" data-count="2" title="2 Inputs">2</button>
+              <button class="btn-input-count ${comp.inputCount === 3 ? 'active' : ''}" data-count="3" title="3 Inputs">3</button>
+              <button class="btn-input-count ${comp.inputCount === 4 ? 'active' : ''}" data-count="4" title="4 Inputs">4</button>
+            </div>
+          </div>
+        `;
+      } else if (comp.type === 'NOT') {
+        inputsConfigHtml = `
+          <div class="prop-row">
+            <span class="prop-label">Gate Inputs:</span>
+            <span class="prop-value" style="color: var(--text-dim);">1 (fixed)</span>
+          </div>
+        `;
+      }
+
       container.innerHTML = `
         <div class="inspector-prop-group">
           <div class="prop-row">
@@ -1361,6 +1487,7 @@ export class LogicLensUI {
             <span class="prop-label">Ports:</span>
             <span class="prop-value">${comp.inputCount} In / ${comp.outputCount} Out</span>
           </div>
+          ${inputsConfigHtml}
           <div style="margin-top: 0.75rem; border-top: 1px solid var(--border-subtle); padding-top: 0.75rem;">
             <button id="inspector-delete-btn" class="btn btn-secondary" style="width: 100%; justify-content: center; color: var(--accent-rose); border-color: rgba(244, 63, 94, 0.4);">
               <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
@@ -1369,6 +1496,17 @@ export class LogicLensUI {
           </div>
         </div>
       `;
+
+      if (isConfigurableGate(comp.type)) {
+        const countBtns = container.querySelectorAll('.btn-input-count');
+        countBtns.forEach((btn) => {
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const count = parseInt(btn.getAttribute('data-count') || '2', 10);
+            this.setComponentInputCount(comp.id, count);
+          });
+        });
+      }
 
       document.getElementById('inspector-delete-btn')?.addEventListener('click', () => {
         if (this.selectedCompId) this.deleteComponent(this.selectedCompId);
