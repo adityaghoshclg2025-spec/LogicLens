@@ -267,12 +267,12 @@ describe('Circuit Simulation Integration with Configurable Multi-Input Gates', (
     expect(tt.rows.length).toBe(8);
 
     // Row 0 (0,0,0) -> 0
-    expect(tt.rows[0].inputs).toEqual(['0', '0', '0']);
-    expect(tt.rows[0].outputs).toEqual(['0']);
+expect(tt.rows[0].inputs).toEqual({ A: '0', B: '0', C: '0' });
+expect(tt.rows[0].outputs).toEqual({ Y: '0' });
 
-    // Row 7 (1,1,1) -> 1
-    expect(tt.rows[7].inputs).toEqual(['1', '1', '1']);
-    expect(tt.rows[7].outputs).toEqual(['1']);
+// Row 7 (1,1,1) -> 1
+expect(tt.rows[7].inputs).toEqual({ A: '1', B: '1', C: '1' });
+expect(tt.rows[7].outputs).toEqual({ Y: '1' });
   });
 
   it('preserves circuit explanation for multi-input gate networks', () => {

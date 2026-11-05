@@ -32,6 +32,7 @@ export interface CircuitExplanation {
   outputLabel: string;
   outputNet: string;
   outputValue: LogicValue;
+  expression: string;
   steps: ExplanationStep[];
   /** Human-readable warnings intended for the teaching view. */
   warnings: ExplanationWarning[];
@@ -49,8 +50,8 @@ function getLabel(instance: ComponentInstance, resolveLabel?: (id: string, type:
   const resolved = resolveLabel?.(instance.id, instance.def.type);
   if (resolved) return resolved;
 
-  const prefix = instance.id.slice(0, instance.id.lastIndexOf('_'));
-  if (prefix && prefix !== instance.def.type) return prefix;
+  if (instance.label) return instance.label;
+
   return DEFAULT_LABELS[instance.def.type] ?? instance.def.type;
 }
 
@@ -151,6 +152,47 @@ export function explainCircuit(
     });
   }
 
+    const buildExpression = (net: string, activeNets = new Set<string>()): string => {
+    if (!net) return '?';
+    if (activeNets.has(net)) return 'FEEDBACK';
+
+    const drivers = driverMap.get(net) ?? [];
+    if (drivers.length !== 1) return '?';
+
+    const { instance } = drivers[0];
+    const type = instance.def.type;
+
+    if (type === 'INPUT') {
+      return getLabel(instance, resolveLabel);
+    }
+
+    if (!['AND', 'OR', 'NAND', 'NOR', 'XOR', 'XNOR', 'NOT', 'BUFFER'].includes(type)) {
+      return '?';
+    }
+
+    const nextActive = new Set(activeNets);
+    nextActive.add(net);
+
+    const inputExpressions = instance.inputNetIds.map((inputNet) =>
+      buildExpression(inputNet, nextActive)
+    );
+
+    if (inputExpressions.some((expression) => expression === '?')) return '?';
+
+    if (type === 'NOT') {
+      return `NOT ${inputExpressions[0] ?? '?'}`;
+    }
+
+    if (type === 'BUFFER') {
+      return inputExpressions[0] ?? '?';
+    }
+
+    if (type === 'NAND' || type === 'NOR' || type === 'XNOR') {
+      return `NOT (${inputExpressions.join(` ${type === 'NAND' ? 'AND' : type === 'NOR' ? 'OR' : 'XOR'} `)})`;
+    }
+
+    return inputExpressions.join(` ${type} `);
+  };
   const floatingNets = new Set(circuit.findFloatingNets());
   const steps: ExplanationStep[] = [];
   const warnings: ExplanationWarning[] = [];
@@ -284,5 +326,14 @@ export function explainCircuit(
     description: `The output probe currently reads ${valueName(outputValue)} (${outputValue}).`
   });
 
-  return { outputId, outputLabel, outputNet, outputValue, steps, warnings, notes: [...new Set(notes)] };
+  return {
+  outputId,
+  outputLabel,
+  outputNet,
+  outputValue,
+  expression: buildExpression(outputNet),
+  steps,
+  warnings,
+  notes: [...new Set(notes)]
+};
 }

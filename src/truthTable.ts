@@ -95,10 +95,10 @@ export function generateTruthTable(circuit: Circuit, options?: TruthTableOptions
       sequentialDetected = true;
     }
     if (!options?.inputs && inst.def.type === 'INPUT') {
-      rawInputs.push({ id, label: id });
+      rawInputs.push({ id, label: inst.label ?? id });
     }
     if (!options?.outputs && inst.def.type === 'OUTPUT') {
-      rawOutputs.push({ id, label: id });
+      rawOutputs.push({ id, label: inst.label ?? id });
     }
   }
 

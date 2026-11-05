@@ -30,6 +30,7 @@ export class Circuit {
     const id = nextId(label ?? def.type);
     this.components.set(id, {
       id,
+      label: label ?? def.type,
       def,
       state: def.initialState ? def.initialState() : undefined,
       inputNetIds: new Array(def.inputCount).fill(''),

@@ -21,6 +21,7 @@ export interface ComponentDefinition<S = undefined> {
 
 export interface ComponentInstance {
   id: string;
+  label?: string;
   def: ComponentDefinition<any>;
   state: any;
   inputNetIds: string[];
